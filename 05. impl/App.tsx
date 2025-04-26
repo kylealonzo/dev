@@ -38,7 +38,7 @@ export const AuthContext = createContext<AuthContextType>({
 });
 
 // Define navigation types
-type RootStackParamList = { 
+type RootStackParamList = {
   Login: undefined;
   Admin: undefined;
   Lecturer: undefined;
@@ -90,7 +90,6 @@ export default function App() {
       }
     }
     
-    // Reset auth state
     setIsLoggedIn(false);
     setUser(null);
     console.log('User logged out at:', new Date().toLocaleTimeString());

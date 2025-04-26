@@ -219,7 +219,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, navigation }) => {
         </View>
         
         <View style={styles.footer}>
-          <Text style={styles.footerText}>© 2025 Attendance System</Text>
+          <Text style={styles.footerText}>© 2023 Attendance System</Text>
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext, useRef } from 'react';
+import React, { useState, useEffect, useContext } from 'react';
 import { 
   StyleSheet, 
   Text, 
@@ -13,14 +13,11 @@ import {
   ActivityIndicator,
   Platform,
   Image,
-  StatusBar as RNStatusBar,
-  TouchableWithoutFeedback,
-  Animated
+  StatusBar as RNStatusBar
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { AuthContext } from '../../App';
-import { useNavigation } from '@react-navigation/native';
 
 interface LecturerScreenProps {}
 
@@ -54,7 +51,6 @@ interface CourseItem {
 type TabType = 'dashboard' | 'student' | 'reports' | 'classes';
 
 const LecturerScreen: React.FC<LecturerScreenProps> = () => {
-  const navigation = useNavigation();
   const { user, handleLogout } = useContext(AuthContext);
   const lecturerName = user ? `${user.fname} ${user.lname}` : '';
   
@@ -64,11 +60,6 @@ const LecturerScreen: React.FC<LecturerScreenProps> = () => {
   const [currentDate, setCurrentDate] = useState('');
   const [scannerModalVisible, setScannerModalVisible] = useState(false);
   const [selectedCourse, setSelectedCourse] = useState<CourseItem | null>(null);
-  const [menuVisible, setMenuVisible] = useState(false);
-  
-  const [isLoggingOut, setIsLoggingOut] = useState(false);
-  const fadeAnim = useRef(new Animated.Value(1)).current;
-  const scaleAnim = useRef(new Animated.Value(1)).current;
   
   useEffect(() => {
     const date = new Date();
@@ -80,25 +71,98 @@ const LecturerScreen: React.FC<LecturerScreenProps> = () => {
     };
     setCurrentDate(date.toLocaleDateString('en-US', options));
     
-    // Set loading state initially
-    setIsLoading(true);
-    
-    // Fetch data (in a real app this would call an API)
-    fetchData();
+    // Simulate loading courses with mock student data
+    setTimeout(() => {
+      // Add mock courses with student data
+      const mockCourses: CourseItem[] = [
+        {
+          id: '1',
+          name: 'Computer Science 101',
+          time: '9:00 AM - 10:30 AM',
+          location: 'Building A',
+          classroom: '101',
+          description: 'Introduction to Computer Science',
+          classCode: 'CS101',
+          students: 25,
+          attendance: 20,
+          status: 'ongoing',
+          studentList: generateMockStudents(25, 20)
+        },
+        {
+          id: '2',
+          name: 'Data Structures',
+          time: '11:00 AM - 12:30 PM',
+          location: 'Building B',
+          classroom: '202',
+          description: 'Advanced data structures and algorithms',
+          classCode: 'DS202',
+          students: 18,
+          attendance: 15,
+          status: 'upcoming',
+          studentList: generateMockStudents(18, 15)
+        },
+        {
+          id: '3',
+          name: 'Web Development',
+          time: '2:00 PM - 3:30 PM',
+          location: 'Building C',
+          classroom: '303',
+          description: 'HTML, CSS, JavaScript and React',
+          classCode: 'WD303',
+          students: 30,
+          attendance: 25,
+          status: 'completed',
+          studentList: generateMockStudents(30, 25)
+        }
+      ];
+      
+      setCourses(mockCourses);
+      setIsLoading(false);
+    }, 1000);
   }, []);
 
-  // Remove mock student generation function
-  // Function to fetch data from API
-  const fetchData = async () => {
-    try {
-      // In a real app, this would be an actual API call
-      setCourses([]);
-      setIsLoading(false);
-    } catch (error) {
-      console.error('Error fetching data:', error);
-      Alert.alert('Error', 'Failed to load data');
-      setIsLoading(false);
+  // Function to generate mock student data
+  const generateMockStudents = (total: number, present: number): StudentItem[] => {
+    const students: StudentItem[] = [];
+    const firstNames = ['John', 'Emma', 'Michael', 'Olivia', 'William', 'Sophia', 'James', 'Ava', 'Alexander', 'Isabella', 'Kyle'];
+    const lastNames = ['Smith', 'Johnson', 'Williams', 'Jones', 'Brown', 'Davis', 'Miller', 'Wilson', 'Moore', 'Taylor', 'Alonzo'];
+    
+    // Generate dates for the last 5 class sessions
+    const classDates = [];
+    const today = new Date();
+    for (let i = 0; i < 5; i++) {
+      const date = new Date(today);
+      date.setDate(date.getDate() - (i * 7)); // Weekly classes
+      classDates.push(date.toISOString().split('T')[0]);
     }
+    classDates.reverse(); // Oldest to newest
+    
+    for (let i = 0; i < total; i++) {
+      const firstName = i === 0 ? 'Kyle' : firstNames[Math.floor(Math.random() * firstNames.length)];
+      const lastName = i === 0 ? 'Alonzo' : lastNames[Math.floor(Math.random() * lastNames.length)];
+      const name = `${firstName} ${lastName}`;
+      const studentId = `STU${100000 + i}`;
+      const email = `${firstName.toLowerCase()}.${lastName.toLowerCase()}@university.edu`;
+      
+      // Generate random attendance record for past dates
+      const attendanceRecord: Record<string, boolean> = {};
+      classDates.forEach(date => {
+        // Higher chance of being present (80%) for more consistent data
+        attendanceRecord[date] = Math.random() < 0.8;
+      });
+      
+      students.push({
+        id: `student-${i + 1}`,
+        name,
+        studentId,
+        email,
+        present: i < present,
+        lastAttendance: i < present ? new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : undefined,
+        attendanceRecord
+      });
+    }
+    
+    return students;
   };
 
   const renderContent = () => {
@@ -124,7 +188,9 @@ const LecturerScreen: React.FC<LecturerScreenProps> = () => {
                 <View style={styles.statIconContainer}>
                   <Ionicons name="people-outline" size={24} color="#3b82f6" />
                 </View>
-                <Text style={styles.statCount}>0</Text>
+                <Text style={styles.statCount}>
+                  {courses.reduce((sum, course) => sum + course.students, 0)}
+                </Text>
                 <Text style={styles.statLabel}>Students</Text>
               </View>
               
@@ -132,7 +198,9 @@ const LecturerScreen: React.FC<LecturerScreenProps> = () => {
                 <View style={styles.statIconContainer}>
                   <Ionicons name="calendar-outline" size={24} color="#3b82f6" />
                 </View>
-                <Text style={styles.statCount}>0</Text>
+                <Text style={styles.statCount}>
+                  {courses.filter(c => c.status === 'ongoing').length}
+                </Text>
                 <Text style={styles.statLabel}>Active Classes</Text>
               </View>
             </View>
@@ -148,7 +216,7 @@ const LecturerScreen: React.FC<LecturerScreenProps> = () => {
                 <Ionicons name="school-outline" size={64} color="#e1e5e9" />
                 <Text style={styles.emptyStateText}>No Classes Yet</Text>
                 <Text style={styles.emptyStateSubtext}>
-                  Connect to your API to see your classes
+                  Classes will appear here once assigned
                 </Text>
               </View>
             ) : (
@@ -262,276 +330,144 @@ const LecturerScreen: React.FC<LecturerScreenProps> = () => {
     }
   };
 
-  const toggleMenu = () => {
-    setMenuVisible(!menuVisible);
-  };
-
-  const onLogout = async () => {
-    try {
-      // Show confirmation dialog
-      Alert.alert(
-        "Confirm Logout",
-        "Are you sure you want to log out?",
-        [
-          {
-            text: "Cancel",
-            style: "cancel",
-          },
-          {
-            text: "Log Out",
-            style: "destructive",
-            onPress: async () => {
-              setIsLoggingOut(true);
-              
-              // Close the menu with animation
-              setMenuVisible(false);
-              
-              // Start logout animation
-              Animated.parallel([
-                Animated.timing(fadeAnim, {
-                  toValue: 0,
-                  duration: 800,
-                  useNativeDriver: true,
-                }),
-                Animated.timing(scaleAnim, {
-                  toValue: 0.95,
-                  duration: 800,
-                  useNativeDriver: true,
-                })
-              ]).start(async () => {
-                // Perform actual logout after animation completes
-                await handleLogout();
-              });
-            }
-          }
-        ],
-        { cancelable: true }
-      );
-    } catch (error) {
-      // Reset animations if error occurs
-      Animated.parallel([
-        Animated.timing(fadeAnim, {
-          toValue: 1,
-          duration: 300,
-          useNativeDriver: true,
-        }),
-        Animated.timing(scaleAnim, {
-          toValue: 1,
-          duration: 300,
-          useNativeDriver: true,
-        })
-      ]).start();
-      
-      setIsLoggingOut(false);
-      console.error('Error logging out:', error);
-      Alert.alert('Error', 'Failed to log out. Please try again.');
-    }
-  };
-
   return (
-    <SafeAreaView style={{ flex: 1 }}>
-      <Animated.View style={[
-        styles.container, 
-        { opacity: fadeAnim, transform: [{ scale: scaleAnim }] }
-      ]}>
-        <StatusBar style="dark" />
-        
-        {/* Logout overlay */}
-        {isLoggingOut && (
-          <View style={styles.logoutOverlay}>
-            <ActivityIndicator size="large" color="#fff" />
-            <Text style={styles.logoutText}>Logging out...</Text>
-          </View>
-        )}
-        
-        {/* Header */}
-        <View style={styles.header}>
-          <View style={styles.headerContent}>
-            <TouchableOpacity onPress={toggleMenu} style={styles.menuButton}>
-              <Ionicons name="menu-outline" size={24} color="#333" />
-            </TouchableOpacity>
-            <Text style={styles.headerTitle}>LECTURER</Text>
-          </View>
-        </View>
-        
-        {/* Menu Modal */}
-        <Modal
-          visible={menuVisible}
-          transparent={true}
-          animationType="slide"
-          onRequestClose={() => setMenuVisible(false)}
+    <SafeAreaView style={styles.container}>
+      <StatusBar style="dark" />
+      
+      {/* Header */}
+      <View style={styles.header}>
+        <Text style={styles.headerTitle}>LECTURER</Text>
+        <TouchableOpacity onPress={handleLogout}>
+          <Ionicons name="log-out-outline" size={24} color="#333" />
+        </TouchableOpacity>
+      </View>
+      
+      {/* Content */}
+      <View style={styles.content}>
+        {renderContent()}
+      </View>
+      
+      {/* Bottom Navigation */}
+      <View style={styles.bottomNav}>
+        <TouchableOpacity 
+          style={[styles.navItem, activeTab === 'dashboard' && styles.activeNavItem]} 
+          onPress={() => setActiveTab('dashboard')}
         >
-          <TouchableWithoutFeedback onPress={() => setMenuVisible(false)}>
-            <View style={styles.menuOverlay}>
-              <View style={styles.menuContent}>
-                <View style={styles.menuHeader}>
-                  <Text style={styles.menuTitle}>Menu</Text>
-                  <TouchableOpacity onPress={() => setMenuVisible(false)}>
-                    <Ionicons name="close" size={24} color="#333" />
-                  </TouchableOpacity>
+          <Ionicons 
+            name={activeTab === 'dashboard' ? "home" : "home-outline"} 
+            size={24} 
+            color={activeTab === 'dashboard' ? "#3b82f6" : "#666"} 
+          />
+          <Text style={[styles.navLabel, activeTab === 'dashboard' && styles.activeNavLabel]}>
+            Dashboard
+          </Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity 
+          style={[styles.navItem, activeTab === 'student' && styles.activeNavItem]} 
+          onPress={() => setActiveTab('student')}
+        >
+          <Ionicons 
+            name={activeTab === 'student' ? "people" : "people-outline"} 
+            size={24} 
+            color={activeTab === 'student' ? "#3b82f6" : "#666"} 
+          />
+          <Text style={[styles.navLabel, activeTab === 'student' && styles.activeNavLabel]}>
+            Student
+          </Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity 
+          style={[styles.navItem, activeTab === 'reports' && styles.activeNavItem]} 
+          onPress={() => setActiveTab('reports')}
+        >
+          <Ionicons 
+            name={activeTab === 'reports' ? "document-text" : "document-text-outline"} 
+            size={24} 
+            color={activeTab === 'reports' ? "#3b82f6" : "#666"} 
+          />
+          <Text style={[styles.navLabel, activeTab === 'reports' && styles.activeNavLabel]}>
+            Reports
+          </Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity 
+          style={[styles.navItem, activeTab === 'classes' && styles.activeNavItem]} 
+          onPress={() => setActiveTab('classes')}
+        >
+          <Ionicons 
+            name={activeTab === 'classes' ? "grid" : "grid-outline"} 
+            size={24} 
+            color={activeTab === 'classes' ? "#3b82f6" : "#666"} 
+          />
+          <Text style={[styles.navLabel, activeTab === 'classes' && styles.activeNavLabel]}>
+            Classes
+          </Text>
+        </TouchableOpacity>
+      </View>
+      
+      {/* QR Code Modal */}
+      <Modal
+        visible={scannerModalVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setScannerModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.qrCodeContainer}>
+            <View style={styles.qrCodeHeader}>
+              <Text style={styles.qrCodeTitle}>Attendance QR Code</Text>
+              {selectedCourse && (
+                <>
+                  <Text style={styles.qrCodeSubtitle}>{selectedCourse.name}</Text>
+                  <View style={styles.qrCodeClassCode}>
+                    <Text style={styles.qrCodeClassCodeText}>{selectedCourse.classCode}</Text>
+                  </View>
+                </>
+              )}
+            </View>
+            
+            <View style={styles.qrCodeBox}>
+              {/* Simplified QR code visual */}
+              <View style={styles.qrCode}>
+                {/* Static QR code sample */}
+                <Image 
+                  source={{ uri: 'https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=example' }} 
+                  style={styles.qrImage}
+                />
+              </View>
+            </View>
+            
+            {selectedCourse && (
+              <View style={styles.qrCodeStats}>
+                <View style={styles.qrCodeStat}>
+                  <Text style={styles.qrCodeStatValue}>{selectedCourse.attendance}</Text>
+                  <Text style={styles.qrCodeStatLabel}>Present</Text>
                 </View>
                 
-                <View style={styles.menuItemsContainer}>
-                  <TouchableOpacity style={styles.menuItem}>
-                    <Ionicons name="person-outline" size={24} color="#333" style={styles.menuIcon} />
-                    <Text style={styles.menuItemText}>Profile</Text>
-                  </TouchableOpacity>
-                  
-                  <TouchableOpacity style={styles.menuItem}>
-                    <Ionicons name="settings-outline" size={24} color="#333" style={styles.menuIcon} />
-                    <Text style={styles.menuItemText}>Settings</Text>
-                  </TouchableOpacity>
-                  
-                  <TouchableOpacity style={styles.menuItem}>
-                    <Ionicons name="notifications-outline" size={24} color="#333" style={styles.menuIcon} />
-                    <Text style={styles.menuItemText}>Notifications</Text>
-                  </TouchableOpacity>
-                  
-                  <TouchableOpacity style={styles.menuItem}>
-                    <Ionicons name="help-circle-outline" size={24} color="#333" style={styles.menuIcon} />
-                    <Text style={styles.menuItemText}>Help & Support</Text>
-                  </TouchableOpacity>
-                  
-                  <TouchableOpacity style={styles.menuItem} onPress={onLogout}>
-                    <Ionicons name="log-out-outline" size={24} color="#f56565" style={styles.menuIcon} />
-                    <Text style={[styles.menuItemText, { color: '#f56565' }]}>Logout</Text>
-                  </TouchableOpacity>
+                <View style={styles.qrCodeStat}>
+                  <Text style={styles.qrCodeStatValue}>{selectedCourse.students - selectedCourse.attendance}</Text>
+                  <Text style={styles.qrCodeStatLabel}>Absent</Text>
                 </View>
-              </View>
-              <TouchableOpacity 
-                style={styles.dismissArea} 
-                activeOpacity={1}
-                onPress={() => setMenuVisible(false)}
-              />
-            </View>
-          </TouchableWithoutFeedback>
-        </Modal>
-        
-        {/* Content */}
-        <View style={styles.content}>
-          {renderContent()}
-        </View>
-        
-        {/* Bottom Navigation */}
-        <View style={styles.bottomNav}>
-          <TouchableOpacity 
-            style={[styles.navItem, activeTab === 'dashboard' && styles.activeNavItem]} 
-            onPress={() => setActiveTab('dashboard')}
-          >
-            <Ionicons 
-              name={activeTab === 'dashboard' ? "home" : "home-outline"} 
-              size={24} 
-              color={activeTab === 'dashboard' ? "#3b82f6" : "#666"} 
-            />
-            <Text style={[styles.navLabel, activeTab === 'dashboard' && styles.activeNavLabel]}>
-              Dashboard
-            </Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity 
-            style={[styles.navItem, activeTab === 'student' && styles.activeNavItem]} 
-            onPress={() => setActiveTab('student')}
-          >
-            <Ionicons 
-              name={activeTab === 'student' ? "people" : "people-outline"} 
-              size={24} 
-              color={activeTab === 'student' ? "#3b82f6" : "#666"} 
-            />
-            <Text style={[styles.navLabel, activeTab === 'student' && styles.activeNavLabel]}>
-              Student
-            </Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity 
-            style={[styles.navItem, activeTab === 'reports' && styles.activeNavItem]} 
-            onPress={() => setActiveTab('reports')}
-          >
-            <Ionicons 
-              name={activeTab === 'reports' ? "document-text" : "document-text-outline"} 
-              size={24} 
-              color={activeTab === 'reports' ? "#3b82f6" : "#666"} 
-            />
-            <Text style={[styles.navLabel, activeTab === 'reports' && styles.activeNavLabel]}>
-              Reports
-            </Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity 
-            style={[styles.navItem, activeTab === 'classes' && styles.activeNavItem]} 
-            onPress={() => setActiveTab('classes')}
-          >
-            <Ionicons 
-              name={activeTab === 'classes' ? "grid" : "grid-outline"} 
-              size={24} 
-              color={activeTab === 'classes' ? "#3b82f6" : "#666"} 
-            />
-            <Text style={[styles.navLabel, activeTab === 'classes' && styles.activeNavLabel]}>
-              Classes
-            </Text>
-          </TouchableOpacity>
-        </View>
-        
-        {/* QR Code Modal */}
-        <Modal
-          visible={scannerModalVisible}
-          transparent={true}
-          animationType="fade"
-          onRequestClose={() => setScannerModalVisible(false)}
-        >
-          <View style={styles.modalOverlay}>
-            <View style={styles.qrCodeContainer}>
-              <View style={styles.qrCodeHeader}>
-                <Text style={styles.qrCodeTitle}>Attendance QR Code</Text>
-                {selectedCourse && (
-                  <>
-                    <Text style={styles.qrCodeSubtitle}>{selectedCourse.name}</Text>
-                    <View style={styles.qrCodeClassCode}>
-                      <Text style={styles.qrCodeClassCodeText}>{selectedCourse.classCode}</Text>
-                    </View>
-                  </>
-                )}
-              </View>
-              
-              <View style={styles.qrCodeBox}>
-                {/* In a real app, this would come from the backend */}
-                <View style={styles.qrCode}>
-                  <Text style={styles.qrPlaceholderText}>
-                    QR Code will be generated from backend API
+                
+                <View style={styles.qrCodeStat}>
+                  <Text style={styles.qrCodeStatValue}>
+                    {Math.round((selectedCourse.attendance / selectedCourse.students) * 100)}%
                   </Text>
+                  <Text style={styles.qrCodeStatLabel}>Attendance</Text>
                 </View>
               </View>
-              
-              {selectedCourse && (
-                <View style={styles.qrCodeStats}>
-                  <View style={styles.qrCodeStat}>
-                    <Text style={styles.qrCodeStatValue}>{selectedCourse.attendance}</Text>
-                    <Text style={styles.qrCodeStatLabel}>Present</Text>
-                  </View>
-                  
-                  <View style={styles.qrCodeStat}>
-                    <Text style={styles.qrCodeStatValue}>{selectedCourse.students - selectedCourse.attendance}</Text>
-                    <Text style={styles.qrCodeStatLabel}>Absent</Text>
-                  </View>
-                  
-                  <View style={styles.qrCodeStat}>
-                    <Text style={styles.qrCodeStatValue}>
-                      {Math.round((selectedCourse.attendance / selectedCourse.students) * 100)}%
-                    </Text>
-                    <Text style={styles.qrCodeStatLabel}>Attendance</Text>
-                  </View>
-                </View>
-              )}
-              
-              <TouchableOpacity 
-                style={styles.closeButton}
-                onPress={() => setScannerModalVisible(false)}
-              >
-                <Text style={styles.closeButtonText}>Close</Text>
-              </TouchableOpacity>
-            </View>
+            )}
+            
+            <TouchableOpacity 
+              style={styles.closeButton}
+              onPress={() => setScannerModalVisible(false)}
+            >
+              <Text style={styles.closeButtonText}>Close</Text>
+            </TouchableOpacity>
           </View>
-        </Modal>
-      </Animated.View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -544,7 +480,7 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'flex-start',
+    justifyContent: 'space-between',
     paddingHorizontal: 20,
     paddingVertical: 15,
     borderBottomWidth: 1,
@@ -556,7 +492,6 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: 'bold',
     color: '#333',
-    marginLeft: 10,
   },
   content: {
     flex: 1,
@@ -814,9 +749,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  qrPlaceholderText: {
-    fontSize: 16,
-    color: '#666',
+  qrImage: {
+    width: 200,
+    height: 200,
   },
   qrCodeStats: {
     flexDirection: 'row',
@@ -846,73 +781,6 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 16,
     fontWeight: 'bold',
-  },
-  headerContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  menuButton: {
-    padding: 8,
-  },
-  menuOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    flexDirection: 'row',
-  },
-  menuContent: {
-    backgroundColor: '#fff',
-    padding: 20,
-    width: '75%',
-    height: '100%',
-  },
-  menuHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  menuTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#333',
-  },
-  menuItemsContainer: {
-    flex: 1,
-  },
-  menuItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-  },
-  menuIcon: {
-    marginRight: 15,
-  },
-  menuItemText: {
-    fontSize: 16,
-    color: '#333',
-  },
-  dismissArea: {
-    flex: 1,
-    width: '25%',
-  },
-  logoutOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 1000,
-  },
-  logoutText: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginTop: 20,
   },
 });
 
