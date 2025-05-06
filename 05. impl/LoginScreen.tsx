@@ -13,7 +13,6 @@ import {
   ActivityIndicator
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { Picker } from '@react-native-picker/picker';
 import { Ionicons } from '@expo/vector-icons';
 import { StackScreenProps } from '@react-navigation/stack';
 
@@ -36,59 +35,53 @@ const { width } = Dimensions.get('window');
 
 // Define the API endpoint
 // IMPORTANT: Replace 'localhost' with your computer's IP address if testing on a physical device
-const API_URL = 'http://192.168.68.123:3001'; 
+const API_URL = 'http://192.168.68.131:3001'; 
 
 const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, navigation }) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState('student');
   const [error, setError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [isLoading, setIsLoading] = useState(false); // Added loading state
+  const [isLoading, setIsLoading] = useState(false);
 
   const handleLogin = async () => {
     if (!username || !password) {
       setError('Please enter both username and password');
       return;
     }
-    
     setError('');
     setIsLoading(true);
-
     try {
-      console.log('Attempting login with:', { username, role });
-      
-      const response = await fetch(`${API_URL}/login`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ username, password, role }),
-      });
-
-      const data = await response.json();
-      console.log('Server response:', data);
-
-      if (response.ok && data.user) {
-        console.log('Login successful, calling onLogin with:', data.user);
-        onLogin(data.user);
+      // Try all roles in order: student, lecturer, admin
+      const roles = ['student', 'lecturer', 'admin'];
+      let loginSuccess = false;
+      let userData = null;
+      let userRole = '';
+      for (const role of roles) {
+        const response = await fetch(`${API_URL}/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password, role }),
+        });
+        const data = await response.json();
+        if (response.ok && data.user) {
+          loginSuccess = true;
+          userData = data.user;
+          userRole = role;
+          break;
+        }
+      }
+      if (loginSuccess && userData) {
+        onLogin(userData);
       } else {
-        setError(data.message || 'Login failed. Please try again.');
+        setError('Login failed. Please check your credentials.');
       }
     } catch (networkError) {
-      console.error('Login network error:', networkError);
       setError('Unable to connect to server. Please check your connection.');
     } finally {
       setIsLoading(false);
     }
   };
-
-  const renderRoleItem = (label: string, value: string, icon: string) => (
-    <View style={styles.roleItem}>
-      <Ionicons name={icon as any} size={20} color="#1a4b8e" style={styles.roleIcon} />
-      <Text style={styles.roleText}>{label}</Text>
-    </View>
-  );
 
   return (
     <SafeAreaView style={styles.container}>
@@ -115,51 +108,12 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, navigation }) => {
           {error ? <Text style={styles.errorText}>{error}</Text> : null}
           
           <View style={styles.inputContainer}>
-            <Text style={styles.label}>ROLE</Text>
-            <View style={styles.inputWrapper}>
-              <Ionicons 
-                name={role === 'admin' ? "shield-outline" : "people-outline"} 
-                size={20} 
-                color="#1a4b8e" 
-                style={styles.inputIcon} 
-              />
-              <Picker
-                selectedValue={role}
-                onValueChange={(itemValue: string) => {
-                  setRole(itemValue);
-                  // Clear any existing error when changing roles
-                  setError('');
-                }}
-                style={styles.picker}
-                dropdownIconColor="#1a4b8e"
-                itemStyle={styles.pickerItem}
-              >
-                <Picker.Item 
-                  label="Student" 
-                  value="student" 
-                  style={styles.pickerItem}
-                />
-                <Picker.Item 
-                  label="Lecturer" 
-                  value="lecturer" 
-                  style={styles.pickerItem}
-                />
-                <Picker.Item 
-                  label="Admin" 
-                  value="admin" 
-                  style={styles.pickerItem}
-                />
-              </Picker>
-            </View>
-          </View>
-
-          <View style={styles.inputContainer}>
             <Text style={styles.label}>
-              {role === 'admin' ? 'ADMIN USERNAME' : 'USERNAME'}
+              USERNAME
             </Text>
             <View style={styles.inputWrapper}>
               <Ionicons 
-                name={role === 'admin' ? "person-circle-outline" : "person-outline"} 
+                name={"person-outline"} 
                 size={20} 
                 color="#1a4b8e" 
                 style={styles.inputIcon} 
@@ -168,7 +122,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, navigation }) => {
                 style={styles.input}
                 value={username}
                 onChangeText={setUsername}
-                placeholder={role === 'admin' ? "Enter admin username" : "Enter your username"}
+                placeholder={"Enter your username"}
                 autoCapitalize="none"
                 placeholderTextColor="#aaa"
               />
@@ -219,7 +173,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, navigation }) => {
         </View>
         
         <View style={styles.footer}>
-          <Text style={styles.footerText}>© 2023 Attendance System</Text>
+          <Text style={styles.footerText}>© 2025 Attendance System</Text>
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -346,30 +300,6 @@ const styles = StyleSheet.create({
   },
   passwordToggle: {
     paddingRight: 16,
-  },
-  picker: {
-    flex: 1,
-    height: 52,
-    color: '#2d3748',
-    marginLeft: -8,
-  },
-  pickerItem: {
-    height: 52,
-    fontSize: 16,
-    color: '#2d3748',
-  },
-  roleItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-  },
-  roleIcon: {
-    marginRight: 12,
-  },
-  roleText: {
-    fontSize: 16,
-    color: '#2d3748',
   },
   loginButton: {
     backgroundColor: '#1a4b8e',

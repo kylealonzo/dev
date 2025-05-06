@@ -16,7 +16,9 @@ import {
   TouchableWithoutFeedback,
   Modal,
   KeyboardAvoidingView,
-  ActivityIndicator
+  ActivityIndicator,
+  Pressable,
+  Image
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AuthContext } from '../../App';
@@ -53,6 +55,10 @@ interface Class {
   id_classes?: string; // Primary key from database
   classname: string;
   classcode: string;
+  classschedule: string;
+  time: string;
+  section: string;
+  room: string;
   capacity: string;
 }
 
@@ -96,30 +102,50 @@ const mockClasses: Class[] = [
     id: '1',
     classname: 'Introduction to Computer Science',
     classcode: 'CS101',
+    classschedule: 'Monday, Wednesday, Friday',
+    time: '10:00 AM - 11:00 AM',
+    section: 'A',
+    room: 'Room 101',
     capacity: '40'
   },
   {
     id: '2',
     classname: 'Data Structures and Algorithms',
     classcode: 'CS201',
+    classschedule: 'Tuesday, Thursday',
+    time: '11:00 AM - 12:00 PM',
+    section: 'B',
+    room: 'Room 102',
     capacity: '30'
   },
   {
     id: '3',
     classname: 'Database Systems',
     classcode: 'CS301',
+    classschedule: 'Monday, Wednesday',
+    time: '2:00 PM - 3:00 PM',
+    section: 'C',
+    room: 'Room 103',
     capacity: '35'
   },
   {
     id: '4',
     classname: 'Web Development',
     classcode: 'CS401',
+    classschedule: 'Tuesday, Thursday',
+    time: '3:00 PM - 4:00 PM',
+    section: 'D',
+    room: 'Room 104',
     capacity: '25'
   },
   {
     id: '5',
     classname: 'Artificial Intelligence',
     classcode: 'CS501',
+    classschedule: 'Monday, Wednesday, Friday',
+    time: '1:00 PM - 2:00 PM',
+    section: 'E',
+    room: 'Room 105',
     capacity: '30'
   }
 ];
@@ -210,13 +236,17 @@ const initialLecturerForm = {
 const initialClassForm = {
   classname: '',
   classcode: '',
+  classschedule: '',
+  time: '',
+  section: '',
+  room: '',
   capacity: '30'
 };
 
 // Update API_URL to work with React Native
 // React Native can't connect to 'localhost' as it runs in a different context
 // Use your computer's IP address instead
-const API_URL = 'http://192.168.68.123:3001'; // CHANGE THIS to your actual computer's IP address
+const API_URL = 'http://192.168.68.131:3001'; // CHANGE THIS to your actual computer's IP address
 
 // Add a function to test the API connection
 const testApiConnection = async () => {
@@ -285,7 +315,6 @@ const AdminScreen = () => {
   
   // Class management state
   const [classes, setClasses] = useState<Class[]>([]);
-  const [classFilter, setClassFilter] = useState('all');
   const [classSearchQuery, setClassSearchQuery] = useState('');
   
   // Add new state variables for class management
@@ -295,6 +324,15 @@ const AdminScreen = () => {
   const [isClassDeleteConfirmVisible, setIsClassDeleteConfirmVisible] = useState(false);
   const [isClassEditMode, setIsClassEditMode] = useState(false);
   const [editClassId, setEditClassId] = useState<string | null>(null);
+  const [addStudentToClassModalVisible, setAddStudentToClassModalVisible] = useState(false);
+  const [selectedClassForStudent, setSelectedClassForStudent] = useState<Class | null>(null);
+  const [studentIdToAdd, setStudentIdToAdd] = useState('');
+  const [classDetailsVisible, setClassDetailsVisible] = useState(false);
+  const [selectedClassDetails, setSelectedClassDetails] = useState<Class | null>(null);
+  const [assignTeacherModalVisible, setAssignTeacherModalVisible] = useState(false);
+  const [selectedLecturerToAssign, setSelectedLecturerToAssign] = useState<string | null>(null);
+  // Add state for assigned lecturer in AdminScreen
+  const [assignedLecturer, setAssignedLecturer] = useState<Lecturer | null>(null);
   
   // Menu slide animation
   const slideAnim = useRef(new Animated.Value(-300)).current;
@@ -955,41 +993,67 @@ const AdminScreen = () => {
   };
 
   const renderClassItem = ({ item }: { item: Class }) => (
-    <View style={styles.classCard}>
-      <View style={styles.classCardHeader}>
-        <View style={styles.classCodeBadge}>
-          <Text style={styles.classCodeText}>{item.classcode}</Text>
+    <TouchableOpacity 
+      style={styles.classCard}
+      onPress={() => handleOpenClassDetails(item)}
+      activeOpacity={0.7}
+    >
+      <View>
+        <View style={styles.classCardHeader}>
+          <View style={styles.classCodeBadge}>
+            <Text style={styles.classCodeText}>{item.classcode}</Text>
+          </View>
+        </View>
+        
+        <Text style={styles.className}>{item.classname}</Text>
+        {/* Display class schedule and time */}
+        <Text style={{ color: '#666', fontSize: 13, marginTop: 2 }}>
+          Schedule: {item.classschedule || 'N/A'}
+        </Text>
+        <Text style={{ color: '#666', fontSize: 13 }}>
+          Time: {item.time || 'N/A'}
+        </Text>
+        {/* Display section and room */}
+        <Text style={{ color: '#666', fontSize: 13 }}>
+          Section: {item.section || 'N/A'}
+        </Text>
+        <Text style={{ color: '#666', fontSize: 13, marginBottom: 4 }}>
+          Room: {item.room || 'N/A'}
+        </Text>
+        
+        <View style={styles.classDetailsRow}>
+          <View style={styles.classDetailItem}>
+            <Ionicons name="people-outline" size={16} color="#666" />
+            <Text style={styles.classDetailText}>
+              Capacity: {item.capacity}
+            </Text>
+          </View>
+        </View>
+        
+        <View style={styles.classCardActions}>
+          <TouchableOpacity 
+            style={styles.classActionButton}
+            onPress={(e) => {
+              e.stopPropagation();
+              handleEditClass(item);
+            }}
+          >
+            <Ionicons name="create-outline" size={18} color="#1a4b8e" />
+            <Text style={styles.classActionText}>Edit</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={[styles.classActionButton, styles.deleteButton]}
+            onPress={(e) => {
+              e.stopPropagation();
+              handleDeleteClass(item.id);
+            }}
+          >
+            <Ionicons name="trash-outline" size={18} color="#e74c3c" />
+            <Text style={styles.deleteButtonText}>Delete</Text>
+          </TouchableOpacity>
         </View>
       </View>
-      
-      <Text style={styles.className}>{item.classname}</Text>
-      
-      <View style={styles.classDetailsRow}>
-        <View style={styles.classDetailItem}>
-          <Ionicons name="people-outline" size={16} color="#666" />
-          <Text style={styles.classDetailText}>
-            Capacity: {item.capacity}
-          </Text>
-        </View>
-      </View>
-      
-      <View style={styles.classCardActions}>
-        <TouchableOpacity 
-          style={styles.classActionButton}
-          onPress={() => handleEditClass(item)}
-        >
-          <Ionicons name="create-outline" size={18} color="#1a4b8e" />
-          <Text style={styles.classActionText}>Edit</Text>
-        </TouchableOpacity>
-        <TouchableOpacity 
-          style={[styles.classActionButton, styles.deleteButton]}
-          onPress={() => handleDeleteClass(item.id)}
-        >
-          <Ionicons name="trash-outline" size={18} color="#e74c3c" />
-          <Text style={styles.deleteButtonText}>Delete</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
+    </TouchableOpacity>
   );
 
   const getClassStatusStyle = () => {
@@ -1321,12 +1385,17 @@ const AdminScreen = () => {
           <View style={styles.tabContent}>
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>Student Management</Text>
-              <TouchableOpacity 
-                style={styles.addButton}
+              <Pressable 
+                style={({pressed}) => [
+                  styles.addButton,
+                  pressed && {opacity: 0.9, transform: [{scale: 0.98}]}
+                ]}
                 onPress={() => setAddStudentModalVisible(true)}
+                android_ripple={{color: 'rgba(255, 255, 255, 0.3)', borderless: false}}
               >
-                <Ionicons name="add" size={24} color="white" />
-              </TouchableOpacity>
+                <Ionicons name="add" size={20} color="white" />
+                <Text style={styles.addButtonText}>Add Student</Text>
+              </Pressable>
             </View>
 
             {isLoading && (
@@ -1565,12 +1634,17 @@ const AdminScreen = () => {
           <View style={styles.tabContent}>
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>Lecturer Management</Text>
-              <TouchableOpacity 
-                style={styles.addButton}
+              <Pressable 
+                style={({pressed}) => [
+                  styles.addButton,
+                  pressed && {opacity: 0.9, transform: [{scale: 0.98}]}
+                ]}
                 onPress={() => setAddLecturerModalVisible(true)}
+                android_ripple={{color: 'rgba(255, 255, 255, 0.3)', borderless: false}}
               >
-                <Ionicons name="add" size={24} color="white" />
-              </TouchableOpacity>
+                <Ionicons name="add" size={20} color="white" />
+                <Text style={styles.addButtonText}>Add Lecturer</Text>
+              </Pressable>
             </View>
             
             <View style={styles.filterContainer}>
@@ -1916,47 +1990,34 @@ const AdminScreen = () => {
           <View style={styles.tabContent}>
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>Class Management</Text>
-              <TouchableOpacity 
-                style={styles.addButton}
+              <Pressable 
+                style={({pressed}) => [
+                  styles.addButton,
+                  pressed && {opacity: 0.9, transform: [{scale: 0.98}]}
+                ]}
                 onPress={() => setAddClassModalVisible(true)}
+                android_ripple={{color: 'rgba(255, 255, 255, 0.3)', borderless: false}}
               >
-                <Ionicons name="add" size={24} color="white" />
-              </TouchableOpacity>
+                <Ionicons name="add" size={20} color="white" />
+                <Text style={styles.addButtonText}>Add Class</Text>
+              </Pressable>
             </View>
             
-            <View style={styles.filterContainer}>
-              <TouchableOpacity 
-                style={[styles.filterChip, classFilter === 'all' && styles.activeFilterChip]}
-                onPress={() => setClassFilter('all')}
-              >
-                <Text style={classFilter === 'all' ? styles.activeFilterText : styles.filterText}>All</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.filterChip, classFilter === 'upcoming' && styles.activeFilterChip]}
-                onPress={() => setClassFilter('upcoming')}
-              >
-                <Text style={classFilter === 'upcoming' ? styles.activeFilterText : styles.filterText}>Upcoming</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.filterChip, classFilter === 'ongoing' && styles.activeFilterChip]}
-                onPress={() => setClassFilter('ongoing')}
-              >
-                <Text style={classFilter === 'ongoing' ? styles.activeFilterText : styles.filterText}>Ongoing</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.filterChip, classFilter === 'completed' && styles.activeFilterChip]}
-                onPress={() => setClassFilter('completed')}
-              >
-                <Text style={classFilter === 'completed' ? styles.activeFilterText : styles.filterText}>Completed</Text>
-              </TouchableOpacity>
+            <View style={styles.searchContainer}>
+              <Ionicons name="search" size={20} color="#666" style={styles.searchIcon} />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search classes by name or code..."
+                value={classSearchQuery}
+                onChangeText={setClassSearchQuery}
+                placeholderTextColor="#999"
+              />
+              {classSearchQuery !== '' && (
+                <TouchableOpacity onPress={() => setClassSearchQuery('')}>
+                  <Ionicons name="close-circle" size={20} color="#999" />
+                </TouchableOpacity>
+              )}
             </View>
-            
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Search classes..."
-              value={classSearchQuery}
-              onChangeText={setClassSearchQuery}
-            />
             
             {isLoading && (
               <View style={styles.loadingContainer}>
@@ -3174,6 +3235,10 @@ const AdminScreen = () => {
               id_classes: cls.id_classes.toString(),
               classname: cls.classname,
               classcode: cls.classcode,
+              classschedule: cls.classschedule,
+              time: cls.time,
+              section: cls.section || '',
+              room: cls.room || '',
               capacity: cls.capacity
             }))
           : [];
@@ -3198,58 +3263,42 @@ const AdminScreen = () => {
   const saveClassToDatabase = async (classData: {
     classname: string;
     classcode: string;
+    classschedule: string;
+    time: string;
+    section: string;
+    room: string;
     capacity: string;
   }): Promise<{ success: boolean; data?: any; error?: string }> => {
     try {
-      setIsLoading(true);
-      
-      // Map our form fields to what the server expects
-      const classPayload = {
-        classname: classData.classname,
-        classcode: classData.classcode,
-        capacity: classData.capacity
-      };
-      
-      console.log(`Sending class data to: ${API_URL}/classes`);
-      console.log('Class data:', classPayload);
-      
-      // Add timeout to the fetch request
-      const controller = new AbortController();
-      const { signal } = controller;
-      
-      // Set timeout for 15 seconds
-      const timeout = setTimeout(() => {
-        controller.abort();
-      }, 15000);
-      
-      // Call the API to create a new class
-      const response = await fetch(`${API_URL}/classes`, {
+      const response = await fetch(`${API_URL}/api/classes`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Accept': 'application/json',
         },
-        body: JSON.stringify(classPayload),
-        signal
+        body: JSON.stringify(classData),
       });
-      
-      clearTimeout(timeout);
-      
-      const result = await response.json();
-      console.log('Server response:', result);
-      
+
       if (!response.ok) {
-        throw new Error(result.error || 'Failed to save class');
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to save class');
       }
+
+      const result = await response.json();
       
-      setIsLoading(false);
-      return { success: true, data: result };
+      if (!result.success) {
+        throw new Error(result.message || 'Failed to save class');
+      }
+
+      return {
+        success: true,
+        data: result.data
+      };
+
     } catch (error: any) {
       console.error('Error saving class:', error);
-      setIsLoading(false);
-      return { 
-        success: false, 
-        error: `Failed to save class: ${error.message}` 
+      return {
+        success: false,
+        error: error.message || 'Failed to save class'
       };
     }
   };
@@ -3258,6 +3307,10 @@ const AdminScreen = () => {
   const updateClassInDatabase = async (id: string, classData: {
     classname: string;
     classcode: string;
+    classschedule: string;
+    time: string;
+    section: string;
+    room: string;
     capacity: string;
   }): Promise<{ success: boolean; data?: any; error?: string }> => {
     try {
@@ -3267,6 +3320,10 @@ const AdminScreen = () => {
       const classPayload = {
         classname: classData.classname,
         classcode: classData.classcode,
+        classschedule: classData.classschedule,
+        time: classData.time,
+        section: classData.section,
+        room: classData.room,
         capacity: classData.capacity
       };
       
@@ -3377,6 +3434,10 @@ const AdminScreen = () => {
           id: result.data.id.toString(),
           classname: classForm.classname,
           classcode: classForm.classcode,
+          classschedule: classForm.classschedule,
+          time: classForm.time,
+          section: classForm.section,
+          room: classForm.room,
           capacity: classForm.capacity
         };
         
@@ -3401,6 +3462,10 @@ const AdminScreen = () => {
     setClassForm({
       classname: classItem.classname,
       classcode: classItem.classcode,
+      classschedule: classItem.classschedule,
+      time: classItem.time,
+      section: classItem.section,
+      room: classItem.room,
       capacity: classItem.capacity
     });
     
@@ -3438,6 +3503,10 @@ const AdminScreen = () => {
                   ...cls,
                   classname: classForm.classname,
                   classcode: classForm.classcode,
+                  classschedule: classForm.classschedule,
+                  time: classForm.time,
+                  section: classForm.section,
+                  room: classForm.room,
                   capacity: classForm.capacity
                 }
               : cls
@@ -3551,6 +3620,46 @@ const AdminScreen = () => {
             </View>
 
             <View style={styles.formGroup}>
+              <Text style={styles.formLabel}>Class Schedule</Text>
+              <TextInput
+                style={styles.formInput}
+                placeholder="Enter class schedule"
+                value={classForm.classschedule}
+                onChangeText={(value) => handleClassInputChange('classschedule', value)}
+              />
+            </View>
+
+            <View style={styles.formGroup}>
+              <Text style={styles.formLabel}>Time</Text>
+              <TextInput
+                style={styles.formInput}
+                placeholder="Enter class time"
+                value={classForm.time}
+                onChangeText={(value) => handleClassInputChange('time', value)}
+              />
+            </View>
+
+            <View style={styles.formGroup}>
+              <Text style={styles.formLabel}>Section</Text>
+              <TextInput
+                style={styles.formInput}
+                placeholder="Enter section"
+                value={classForm.section}
+                onChangeText={(value) => handleClassInputChange('section', value)}
+              />
+            </View>
+
+            <View style={styles.formGroup}>
+              <Text style={styles.formLabel}>Room</Text>
+              <TextInput
+                style={styles.formInput}
+                placeholder="Enter room"
+                value={classForm.room}
+                onChangeText={(value) => handleClassInputChange('room', value)}
+              />
+            </View>
+
+            <View style={styles.formGroup}>
               <Text style={styles.formLabel}>Capacity</Text>
               <TextInput
                 style={styles.formInput}
@@ -3582,6 +3691,166 @@ const AdminScreen = () => {
       </View>
     </Modal>
   );
+
+  const handleOpenAddStudentToClass = (classItem: Class) => {
+    setSelectedClassForStudent(classItem);
+    setStudentIdToAdd('');
+    setAddStudentToClassModalVisible(true);
+  };
+
+  const handleAddStudentToClass = async () => {
+    if (!studentIdToAdd.trim() || !selectedClassForStudent) {
+      Alert.alert('Error', 'Please enter a valid student ID');
+      return;
+    }
+
+    // Find if the student exists
+    const studentExists = students.find(
+      student => student.studentID.toLowerCase() === studentIdToAdd.trim().toLowerCase()
+    );
+
+    if (!studentExists) {
+      Alert.alert('Error', 'Student ID not found. Please check and try again.');
+      return;
+    }
+
+    // In a real app, you would make an API call to associate the student with the class
+    // For this demo, we'll just show a success message
+    Alert.alert(
+      'Success',
+      `Student ${studentExists.fname} ${studentExists.lname} (ID: ${studentExists.studentID}) has been added to ${selectedClassForStudent.classname}`,
+      [{ text: 'OK', onPress: () => setAddStudentToClassModalVisible(false) }]
+    );
+  };
+
+  const handleCancelAddStudentToClass = () => {
+    setAddStudentToClassModalVisible(false);
+    setSelectedClassForStudent(null);
+    setStudentIdToAdd('');
+  };
+
+  const handleOpenClassDetails = async (classItem: Class) => {
+    setSelectedClassDetails(classItem);
+    setClassDetailsVisible(true);
+    setAssignedLecturer(null);
+    try {
+      const response = await fetch(`${API_URL}/classes/${classItem.id}/lecturer`);
+      if (response.ok) {
+        const data = await response.json();
+        setAssignedLecturer(data.lecturer);
+      } else {
+        setAssignedLecturer(null);
+      }
+    } catch (error) {
+      setAssignedLecturer(null);
+    }
+  };
+
+  const handleCloseClassDetails = () => {
+    setClassDetailsVisible(false);
+    setSelectedClassDetails(null);
+  };
+
+  const handleOpenAssignTeacher = () => {
+    setSelectedLecturerToAssign(null);
+    setAssignTeacherModalVisible(true);
+  };
+
+  const handleCloseAssignTeacher = () => {
+    setAssignTeacherModalVisible(false);
+    setSelectedLecturerToAssign(null);
+  };
+
+  const handleAssignTeacher = async () => {
+    if (!selectedClassDetails) {
+      Alert.alert('Error', 'No class selected');
+      return;
+    }
+
+    // If no lecturer is selected but there's a current lecturer, use that
+    if (!selectedLecturerToAssign) {
+      const currentLecturer = lecturers.find((lec: Lecturer) => 
+        lec.courses.some((course: string) => 
+          course.toLowerCase() === selectedClassDetails.classcode.toLowerCase()
+        )
+      );
+      
+      if (!currentLecturer) {
+        Alert.alert('Error', 'Please select a lecturer to assign');
+        return;
+      }
+      
+      setSelectedLecturerToAssign(currentLecturer.id);
+    }
+
+    // Get the selected lecturer
+    const lecturer = lecturers.find((lec: Lecturer) => lec.id === selectedLecturerToAssign);
+    if (!lecturer) {
+      Alert.alert('Error', 'Selected lecturer not found');
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+
+      // Call the API to assign the lecturer to the class
+      const response = await fetch(`${API_URL}/lecturer-classes/assign`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: JSON.stringify({
+          lecturerId: lecturer.id_lecturer,
+          classId: selectedClassDetails.id_classes || selectedClassDetails.id
+        })
+      });
+
+      let result;
+      const contentType = response.headers.get("content-type");
+      if (contentType && contentType.indexOf("application/json") !== -1) {
+        result = await response.json();
+      } else {
+        // If response is not JSON, get the text and create an error object
+        const text = await response.text();
+        throw new Error(text || 'Failed to assign lecturer to class');
+      }
+
+      if (!response.ok) {
+        throw new Error(result.message || `Server returned ${response.status} ${response.statusText}`);
+      }
+
+      // Refresh the lecturer list to get updated data
+      await fetchLecturers();
+
+      // Fetch the newly assigned lecturer and update the UI
+      try {
+        const res = await fetch(`${API_URL}/classes/${selectedClassDetails.id_classes || selectedClassDetails.id}/lecturer`);
+        if (res.ok) {
+          const data = await res.json();
+          setAssignedLecturer(data.lecturer);
+        }
+      } catch (e) {}
+
+      // Show success message
+      Alert.alert(
+        'Success',
+        `${lecturer.fname} ${lecturer.lname} has been assigned to ${selectedClassDetails.classname}`,
+        [{ text: 'OK', onPress: () => {
+          setAssignTeacherModalVisible(false);
+          setSelectedLecturerToAssign(null);
+        }}]
+      );
+    } catch (error: any) {
+      console.error('Error assigning lecturer to class:', error);
+      Alert.alert(
+        'Error',
+        error.message || 'Failed to assign lecturer to class. Please try again.'
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -3686,6 +3955,471 @@ const AdminScreen = () => {
       {/* Render forms and modals */}
       {renderLecturerForm()}
       {renderClassForm()}
+      
+      {/* Add Student to Class Modal */}
+      <Modal
+        visible={addStudentToClassModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={handleCancelAddStudentToClass}
+      >
+        <View style={styles.modalContainer}>
+          <TouchableWithoutFeedback onPress={handleCancelAddStudentToClass}>
+            <View style={styles.modalOverlay} />
+          </TouchableWithoutFeedback>
+          
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>
+                Add Student to Class
+              </Text>
+              <TouchableOpacity onPress={handleCancelAddStudentToClass}>
+                <Ionicons name="close" size={24} color="#333" />
+              </TouchableOpacity>
+            </View>
+            
+            {selectedClassForStudent && (
+              <View style={styles.selectedClassInfo}>
+                <Text style={styles.selectedClassLabel}>Class:</Text>
+                <Text style={styles.selectedClassName}>{selectedClassForStudent.classname}</Text>
+                <Text style={styles.selectedClassCode}>Code: {selectedClassForStudent.classcode}</Text>
+              </View>
+            )}
+            
+            <View style={styles.formGroup}>
+              <Text style={styles.formLabel}>Student ID</Text>
+              <TextInput
+                style={styles.formInput}
+                value={studentIdToAdd}
+                onChangeText={setStudentIdToAdd}
+                placeholder="Enter student ID"
+                placeholderTextColor="#999"
+                autoCapitalize="characters"
+              />
+              <Text style={styles.formHelpText}>
+                Enter the ID of the student you want to add to this class
+              </Text>
+            </View>
+            
+            <View style={styles.modalFooter}>
+              <TouchableOpacity
+                style={styles.studentCancelButton}
+                onPress={handleCancelAddStudentToClass}
+              >
+                <Text style={styles.studentCancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={styles.submitButton}
+                onPress={handleAddStudentToClass}
+              >
+                <Text style={styles.submitButtonText}>Add Student</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+      
+      {/* Class Details Modal */}
+      <Modal
+        visible={classDetailsVisible}
+        animationType="slide"
+        onRequestClose={handleCloseClassDetails}
+      >
+        <View style={{flex: 1, backgroundColor: '#f8f9fa'}}>
+          {/* Header */}
+          <View style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            padding: 16,
+            backgroundColor: '#fff',
+            borderBottomWidth: 1,
+            borderBottomColor: '#eee',
+          }}>
+            <TouchableOpacity onPress={handleCloseClassDetails}>
+              <Ionicons name="arrow-back" size={24} color="#333" />
+            </TouchableOpacity>
+            <Text style={{
+              fontSize: 18,
+              fontWeight: 'bold',
+              marginLeft: 16,
+            }}>Class Details</Text>
+          </View>
+          
+          {/* Content */}
+          <ScrollView>
+            {selectedClassDetails && (
+              <View style={{padding: 16}}>
+                {/* Class Info */}
+                <View style={{
+                  backgroundColor: '#fff',
+                  borderRadius: 8,
+                  padding: 16,
+                  marginBottom: 16,
+                  elevation: 2,
+                  shadowColor: '#000',
+                  shadowOffset: {width: 0, height: 2},
+                  shadowOpacity: 0.1,
+                  shadowRadius: 4,
+                }}>
+                  <Text style={{
+                    fontSize: 20,
+                    fontWeight: 'bold',
+                    marginBottom: 8,
+                  }}>{selectedClassDetails.classname}</Text>
+                  <View style={{
+                    backgroundColor: '#e6f2ff',
+                    paddingVertical: 4,
+                    paddingHorizontal: 8,
+                    borderRadius: 4,
+                    alignSelf: 'flex-start',
+                  }}>
+                    <Text style={{
+                      color: '#0066cc',
+                      fontWeight: '500',
+                    }}>{selectedClassDetails.classcode}</Text>
+                  </View>
+                  <Text style={{
+                    marginTop: 8,
+                    color: '#666',
+                  }}>Capacity: {selectedClassDetails.capacity}</Text>
+                </View>
+                
+                {/* Teachers Section */}
+                <View style={{
+                  marginTop: 24,
+                  backgroundColor: '#fff',
+                  borderRadius: 12,
+                  padding: 16,
+                  shadowColor: '#000',
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: 0.1,
+                  shadowRadius: 4,
+                  elevation: 2,
+                }}>
+                  <Text style={{
+                    fontSize: 16,
+                    fontWeight: '600',
+                    marginBottom: 12,
+                    color: '#333',
+                  }}>Assigned Teacher</Text>
+                  {assignedLecturer ? (
+                    <View style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      padding: 12,
+                      backgroundColor: '#f8f9fa',
+                      borderRadius: 8,
+                      marginBottom: 8,
+                    }}>
+                      <View style={{flex: 1}}>
+                        <Text style={{fontSize: 16, fontWeight: '500', color: '#333'}}>
+                          {assignedLecturer.fname} {assignedLecturer.lname}
+                        </Text>
+                        <Text style={{fontSize: 14, color: '#666', marginTop: 4}}>
+                          {assignedLecturer.department}
+                        </Text>
+                      </View>
+                      <TouchableOpacity 
+                        style={{
+                          paddingVertical: 8,
+                          paddingHorizontal: 12,
+                          backgroundColor: '#f0f7ff',
+                          borderRadius: 6,
+                          marginLeft: 8,
+                        }}
+                        onPress={handleOpenAssignTeacher}
+                      >
+                        <Text style={{color: '#0066cc', fontWeight: '500'}}>Reassign</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ) : (
+                    <View style={{
+                      padding: 16,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}>
+                      <Text style={{color: '#666'}}>No assigned teacher yet</Text>
+                      <TouchableOpacity 
+                        style={{
+                          marginTop: 8,
+                          paddingVertical: 8,
+                          paddingHorizontal: 12,
+                          backgroundColor: '#f0f7ff',
+                          borderRadius: 4,
+                        }}
+                        onPress={handleOpenAssignTeacher}
+                      >
+                        <Text style={{color: '#0066cc'}}>Assign Teacher</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                </View>
+                
+                {/* Students Section */}
+                <View style={{
+                  backgroundColor: '#fff',
+                  borderRadius: 8,
+                  padding: 16,
+                  marginBottom: 16,
+                  elevation: 2,
+                  shadowColor: '#000',
+                  shadowOffset: {width: 0, height: 2},
+                  shadowOpacity: 0.1,
+                  shadowRadius: 4,
+                }}>
+                  <View style={{
+                    flexDirection: 'row',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    marginBottom: 16,
+                    borderBottomWidth: 1,
+                    borderBottomColor: '#eee',
+                    paddingBottom: 8,
+                  }}>
+                    <View style={{flexDirection: 'row', alignItems: 'center'}}>
+                      <Ionicons name="people" size={24} color="#0066cc" />
+                      <Text style={{
+                        fontSize: 16,
+                        fontWeight: 'bold',
+                        marginLeft: 8,
+                      }}>Students</Text>
+                    </View>
+                    <TouchableOpacity>
+                      <Ionicons name="chevron-up" size={24} color="#666" />
+                    </TouchableOpacity>
+                  </View>
+                  
+                  {mockStudents.slice(0, 10).map((student, index) => (
+                    <View 
+                      key={student.id}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        paddingVertical: 8,
+                        borderBottomWidth: 1,
+                        borderBottomColor: '#f5f5f5',
+                      }}
+                    >
+                      <Image 
+                        source={{uri: `https://randomuser.me/api/portraits/${index % 2 === 0 ? 'men' : 'women'}/${index + 20}.jpg`}}
+                        style={{
+                          width: 50,
+                          height: 50,
+                          borderRadius: 25,
+                          marginRight: 12,
+                        }}
+                      />
+                      <View>
+                        <Text style={{
+                          fontSize: 16,
+                          fontWeight: '500',
+                        }}>{student.lname}, {student.fname}</Text>
+                        <Text style={{color: '#666'}}>Student</Text>
+                      </View>
+                    </View>
+                  ))}
+                  
+                  <TouchableOpacity 
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      marginTop: 16,
+                      padding: 12,
+                      backgroundColor: '#f0f7ff',
+                      borderRadius: 8,
+                    }}
+                    onPress={() => {
+                      handleCloseClassDetails();
+                      handleOpenAddStudentToClass(selectedClassDetails);
+                    }}
+                  >
+                    <Ionicons name="add-circle-outline" size={20} color="#0066cc" />
+                    <Text style={{
+                      marginLeft: 8,
+                      color: '#0066cc',
+                      fontWeight: '500',
+                    }}>Add Student to Class</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+          </ScrollView>
+        </View>
+      </Modal>
+      
+      {/* Assign Teacher Modal */}
+      <Modal
+        visible={assignTeacherModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={handleCloseAssignTeacher}
+      >
+        <View style={styles.modalContainer}>
+          <TouchableWithoutFeedback onPress={handleCloseAssignTeacher}>
+            <View style={styles.modalOverlay} />
+          </TouchableWithoutFeedback>
+          
+          <View style={{
+            flex: 1,
+            justifyContent: 'center',
+            alignItems: 'center',
+          }}>
+            <TouchableWithoutFeedback onPress={handleCloseAssignTeacher}>
+              <View style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                backgroundColor: 'rgba(0, 0, 0, 0.5)',
+              }} />
+            </TouchableWithoutFeedback>
+            
+            <View style={{
+              backgroundColor: 'white',
+              borderRadius: 12,
+              padding: 20,
+              width: '80%',
+              maxHeight: '80%',
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 2 },
+              shadowOpacity: 0.25,
+              shadowRadius: 3.84,
+              elevation: 5,
+            }}>
+              <View style={{
+                flexDirection: 'row',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: 15,
+              }}>
+                <Text style={{
+                  fontSize: 18,
+                  fontWeight: 'bold',
+                }}>Assign Teacher</Text>
+                <TouchableOpacity onPress={handleCloseAssignTeacher}>
+                  <Text style={{
+                    fontSize: 24,
+                    fontWeight: 'bold',
+                    color: '#666',
+                  }}>×</Text>
+                </TouchableOpacity>
+              </View>
+              
+              {selectedClassDetails && (
+                <View style={{
+                  paddingHorizontal: 20,
+                  marginBottom: 15,
+                  backgroundColor: '#f8f9fa',
+                  paddingVertical: 10,
+                  borderTopWidth: 1,
+                  borderBottomWidth: 1,
+                  borderColor: '#eee',
+                }}>
+                  <Text style={{fontSize: 16, fontWeight: '500'}}>{selectedClassDetails.classname}</Text>
+                  <Text style={{color: '#0066cc', marginTop: 4}}>{selectedClassDetails.classcode}</Text>
+                </View>
+              )}
+              
+              <Text style={{
+                paddingHorizontal: 20,
+                marginBottom: 10,
+                color: '#666',
+                fontSize: 14,
+              }}>Select a lecturer to assign to this class:</Text>
+              
+              <ScrollView style={{maxHeight: 400, paddingHorizontal: 20}}>
+                {lecturers.map((lecturer, index) => (
+                  <TouchableOpacity 
+                    key={lecturer.id}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      paddingVertical: 12,
+                      paddingHorizontal: 16,
+                      borderRadius: 8,
+                      marginBottom: 8,
+                      backgroundColor: selectedLecturerToAssign === lecturer.id ? '#e6f2ff' : '#f8f9fa',
+                      borderWidth: 1,
+                      borderColor: selectedLecturerToAssign === lecturer.id ? '#0066cc' : '#eee',
+                    }}
+                    onPress={() => setSelectedLecturerToAssign(lecturer.id)}
+                  >
+                    <View style={{flex: 1}}>
+                      <Text style={{
+                        fontSize: 16,
+                        fontWeight: '500',
+                        color: '#333',
+                      }}>
+                        {lecturer.fname} {lecturer.lname}
+                      </Text>
+                      <Text style={{
+                        fontSize: 14,
+                        color: '#666',
+                        marginTop: 4,
+                      }}>
+                        {lecturer.department}
+                      </Text>
+                    </View>
+                    <View style={{
+                      width: 24,
+                      height: 24,
+                      borderRadius: 12,
+                      borderWidth: 2,
+                      borderColor: selectedLecturerToAssign === lecturer.id ? '#0066cc' : '#ccc',
+                      justifyContent: 'center',
+                      alignItems: 'center',
+                      marginLeft: 12,
+                    }}>
+                      {selectedLecturerToAssign === lecturer.id && (
+                        <View style={{
+                          width: 12,
+                          height: 12,
+                          borderRadius: 6,
+                          backgroundColor: '#0066cc',
+                        }} />
+                      )}
+                    </View>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+              
+              <View style={{
+                flexDirection: 'row',
+                justifyContent: 'flex-end',
+                paddingHorizontal: 20,
+                marginTop: 20,
+              }}>
+                <TouchableOpacity 
+                  style={{
+                    paddingVertical: 10,
+                    paddingHorizontal: 16,
+                    borderRadius: 8,
+                    backgroundColor: '#f2f2f2',
+                    marginRight: 8,
+                  }}
+                  onPress={handleCloseAssignTeacher}
+                >
+                  <Text style={{color: '#666', fontWeight: '500'}}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={{
+                    paddingVertical: 10,
+                    paddingHorizontal: 16,
+                    borderRadius: 8,
+                    backgroundColor: selectedLecturerToAssign ? '#0066cc' : '#ccc',
+                  }}
+                  onPress={handleAssignTeacher}
+                  disabled={!selectedLecturerToAssign}
+                >
+                  <Text style={{color: '#fff', fontWeight: '500'}}>Assign</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -3970,17 +4704,22 @@ const styles = StyleSheet.create({
   },
   addButton: {
     backgroundColor: '#1a4b8e',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 50,
     flexDirection: 'row',
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 3,
   },
   addButtonText: {
     color: '#fff',
     fontSize: 14,
-    fontWeight: '500',
-    marginLeft: 4,
+    fontWeight: '600',
+    marginLeft: 6,
   },
   lecturerItem: {
     backgroundColor: '#fff',
@@ -4213,31 +4952,33 @@ const styles = StyleSheet.create({
   classCardActions: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
-    marginTop: 8,
+    marginTop: 16,
+    flexWrap: 'wrap',
   },
   classActionButton: {
     flexDirection: 'row',
     alignItems: 'center',
+    backgroundColor: '#f8f9fa',
     paddingVertical: 6,
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     borderRadius: 6,
-    backgroundColor: '#f0f7ff',
     marginLeft: 8,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#eee',
   },
   classActionText: {
     fontSize: 12,
     color: '#1a4b8e',
-    fontWeight: '500',
     marginLeft: 4,
   },
-  // Additional styles
   deleteButton: {
-    backgroundColor: '#fff0f0',
+    backgroundColor: '#fff5f5',
+    borderColor: '#ffe3e3',
   },
   deleteButtonText: {
     color: '#e74c3c',
     fontSize: 12,
-    fontWeight: '500',
     marginLeft: 4,
   },
   menuItem: {
@@ -4462,16 +5203,22 @@ const styles = StyleSheet.create({
     borderColor: '#eee',
     paddingHorizontal: 12,
     marginBottom: 16,
-    height: 44,
+    height: 48,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
   },
   searchIcon: {
-    marginRight: 8,
+    marginRight: 10,
   },
   searchInput: {
     flex: 1,
-    height: 40,
+    height: 46,
     fontSize: 16,
     color: '#333',
+    padding: 0,
   },
   classListContainer: {
     paddingBottom: 16,
@@ -4843,7 +5590,7 @@ const styles = StyleSheet.create({
     marginLeft: 4,
   },
   sectionContainer: {
-    backgroundColor: '#fff',
+    backgroundColor: 'white',
     borderRadius: 12,
     marginBottom: 16,
     padding: 16,
@@ -5032,6 +5779,138 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: '#333',
     textAlign: 'center',
+  },
+  selectedClassInfo: {
+    backgroundColor: '#f8f9fa',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 16,
+    borderLeftWidth: 4,
+    borderLeftColor: '#1a4b8e',
+  },
+  selectedClassLabel: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 4,
+  },
+  selectedClassName: {
+    fontSize: 16,
+    color: '#1a4b8e',
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  selectedClassCode: {
+    fontSize: 14,
+    color: '#666',
+  },
+  classDetailsContainer: {
+    flex: 1,
+    backgroundColor: '#f8f9fa',
+  },
+  classDetailsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 16,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  backButton: {
+    padding: 8,
+  },
+  classDetailsTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333',
+    flex: 1,
+    textAlign: 'center',
+  },
+  classDetailsContent: {
+    flex: 1,
+    padding: 16,
+  },
+  classInfoHeader: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  classDetailName: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 8,
+  },
+  classDetailCodeContainer: {
+    backgroundColor: '#f0f7ff',
+    padding: 6,
+    borderRadius: 6,
+    alignSelf: 'flex-start',
+    marginBottom: 8,
+  },
+  classDetailCode: {
+    fontSize: 14,
+    color: '#1a4b8e',
+    fontWeight: '600',
+  },
+  classCapacity: {
+    fontSize: 14,
+    color: '#666',
+    marginTop: 4,
+  },
+  sectionTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  personItemContainer: {
+    marginBottom: 12,
+  },
+  personItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  personAvatar: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    marginRight: 16,
+  },
+  personInfo: {
+    flex: 1,
+  },
+  personName: {
+    fontSize: 16,
+    color: '#333',
+    fontWeight: '500',
+    marginBottom: 2,
+  },
+  personRole: {
+    fontSize: 14,
+    color: '#666',
+  },
+  studentsList: {
+    flex: 1,
+  },
+  sectionAction: {
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });
 
