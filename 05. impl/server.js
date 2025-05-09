@@ -1,1108 +1,675 @@
-const mysql = require('mysql2/promise');
 require('dotenv').config();
-
-// // Log environment variables for debugging
-// console.log('Environment variables:');
-// console.log('DB_HOST:', process.env.DB_HOST);
-// console.log('DB_USER:', process.env.DB_USER);
-// console.log('DB_NAME:', process.env.DB_NAME);
-// console.log('DB_PORT:', process.env.DB_PORT);
-
-// Create a connection without specifying a database
-async function initializeDatabase() {
-  const initialConfig = {
-    host: process.env.DB_HOST || 'localhost',
-    port: process.env.DB_PORT || 3306,
-    user: process.env.DB_USER || 'root',
-    password: process.env.DB_PASSWORD || ''
-  };
-  
-  try {
-    // Create a connection without specifying database
-    const connection = await mysql.createConnection(initialConfig);
-    console.log('Connected to MySQL server');
-    
-    // Create the database if it doesn't exist
-    await connection.query(`CREATE DATABASE IF NOT EXISTS projectx;`);
-    
-    // Close initial connection
-    await connection.end();
-    console.log('Initial setup complete');
-    
-    // Now connect with the full config including database
-    return true;
-  } catch (error) {
-    console.error('Failed to initialize database:', error);
-    return false;
-  }
-}
-
-// MySQL connection configuration
-const dbConfig = {
-  host: process.env.DB_HOST || 'localhost',
-  port: process.env.DB_PORT || 3306,
-  user: process.env.DB_USER || 'root',
-  password: process.env.DB_PASSWORD || '',
-  database: 'projectx',
-  waitForConnections: true,
-  connectionLimit: 10,
-  queueLimit: 0
-};
-
-// console.log('Using database configuration:', dbConfig);
-
-// Create a connection pool
-let pool;
-
-// Test the connection
-async function testConnection() {
-  try {
-    const connection = await pool.getConnection();
-    console.log('Successfully connected to MySQL database');
-    connection.release();
-  } catch (error) {
-    console.error('Error connecting to MySQL database:', error);
-    process.exit(1); // Exit if cannot connect to database
-  }
-}
-
-// Initialize connection and set up server
-async function initialize() {
-  try {
-    const dbInitialized = await initializeDatabase();
-    if (dbInitialized) {
-      pool = mysql.createPool(dbConfig);
-      await testConnection();
-
-      // Verify admin table exists and has correct structure
-      try {
-        const [adminTable] = await pool.query(`
-          SELECT * FROM information_schema.tables 
-          WHERE table_schema = ? AND table_name = 'admin'
-        `, [dbConfig.database]);
-
-        if (adminTable.length === 0) {
-          console.log('Creating admin table...');
-          await pool.query(`
-            CREATE TABLE IF NOT EXISTS admin (
-              idadmin INT AUTO_INCREMENT PRIMARY KEY,
-              fname VARCHAR(45) NOT NULL,
-              lname VARCHAR(45) NOT NULL,
-              email VARCHAR(45),
-              username VARCHAR(45) NOT NULL UNIQUE,
-              password VARCHAR(45) NOT NULL,
-              contact_n VARCHAR(45)
-            )
-          `);
-          console.log('Admin table created successfully');
-
-          // Insert a default admin user
-          await pool.query(`
-            INSERT INTO admin (fname, lname, email, username, password, contact_n)
-            VALUES ('Admin', 'User', 'admin@example.com', 'admin', 'admin123', '1234567890')
-          `);
-          console.log('Default admin user created');
-        } else {
-          console.log('Admin table exists');
-        }
-        
-        // Create devices table if it doesn't exist
-        await pool.query(`
-          CREATE TABLE IF NOT EXISTS devices (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            deviceId VARCHAR(100) NOT NULL,
-            deviceName VARCHAR(100) NOT NULL,
-            modelName VARCHAR(100),
-            osName VARCHAR(45),
-            osVersion VARCHAR(45),
-            ownerId INT NOT NULL,
-            status ENUM('active', 'inactive') DEFAULT 'active',
-            registeredAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-          )
-        `);
-        console.log('Devices table checked/created');
-        
-        // Create user_logs table if it doesn't exist
-        await pool.query(`
-          CREATE TABLE IF NOT EXISTS user_logs (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            user_id INT NOT NULL,
-            username VARCHAR(45) NOT NULL,
-            action VARCHAR(45) NOT NULL,
-            role VARCHAR(45) NOT NULL,
-            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-          )
-        `);
-        console.log('User logs table checked/created');
-        
-        // Check if student table exists and set AUTO_INCREMENT to 1 if it does
-        const [studentTable] = await pool.query(`
-          SELECT * FROM information_schema.tables 
-          WHERE table_schema = ? AND table_name = 'student'
-        `, [dbConfig.database]);
-        
-        if (studentTable.length > 0) {
-          console.log('Student table exists, ensuring AUTO_INCREMENT starts from 1');
-          await pool.query(`ALTER TABLE student AUTO_INCREMENT = 1`);
-        }
-        
-        // Check if lecturer table exists and set AUTO_INCREMENT to 1 if it does
-        const [lecturerTable] = await pool.query(`
-          SELECT * FROM information_schema.tables 
-          WHERE table_schema = ? AND table_name = 'lecturer'
-        `, [dbConfig.database]);
-        
-        if (lecturerTable.length > 0) {
-          console.log('Lecturer table exists, ensuring AUTO_INCREMENT starts from 1');
-          await pool.query(`ALTER TABLE lecturer AUTO_INCREMENT = 1`);
-        }
-        
-      } catch (tableError) {
-        console.error('Error checking/creating tables:', tableError);
-      }
-
-      // Start your Express server here after successful DB init
-      startServer();
-    } else {
-      console.error('Database initialization failed. Exiting.');
-      process.exit(1);
-    }
-  } catch (error) {
-    console.error('Initialization failed:', error);
-    process.exit(1);
-  }
-}
-
-// --- Express Server Setup ---
 const express = require('express');
+const mongoose = require('mongoose');
 const cors = require('cors');
-// const bcrypt = require('bcrypt'); // Removed as bcrypt is not currently used for plain text comparison
+const bcrypt = require('bcryptjs');
+const User = require('./models/User');
+const LoginLog = require('./models/LoginLog');
+const nodemailer = require('nodemailer');
+const Course = require('./models/Course');
+const Attendance = require('./models/Attendance');
 
 const app = express();
-const port = process.env.PORT || 3001; // Use a different port than the React Native dev server
+const PORT = process.env.PORT || 3000;
 
-// Configure CORS to accept all origins for React Native
-app.use(cors({
-  origin: '*', // Allow all origins
-  methods: ['GET', 'POST', 'PUT', 'DELETE'],
-  allowedHeaders: ['Content-Type', 'Authorization']
-}));
+// Middleware
+app.use(cors());
+app.use(express.json());
 
-app.use(express.json()); // Parse JSON request bodies
+// Connect to MongoDB
+mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/projectx')
+  .then(() => console.log('Connected to MongoDB'))
+  .catch(err => console.error('MongoDB connection error:', err));
 
-// Add a test endpoint to verify server connection
-app.get('/test', (req, res) => {
-  res.json({ message: 'Server is running correctly' });
+// Health check endpoint
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok' });
 });
 
-// Login Route
-app.post('/login', async (req, res) => {
-  const { username, password, role } = req.body;
-  
-  console.log('Login attempt:', { username, role });
-
-  if (!username || !password || !role) {
-    return res.status(400).json({ message: 'Username, password, and role are required' });
-  }
-
+// Login endpoint
+app.post('/api/auth/login', async (req, res) => {
   try {
-    let tableName, idField, usernameField;
-    
-    // Determine table and field names based on role
-    switch(role) {
-      case 'admin':
-        tableName = 'admin';
-        idField = 'idadmin';
-        usernameField = 'username';  // admin table uses username
-        break;
-      case 'lecturer':
-        tableName = 'lecturer';
-        idField = 'id_lecturer';
-        usernameField = 'username';
-        break;
-      case 'student':
-        tableName = 'student';
-        idField = 'id_student';
-        usernameField = 'username';
-        break;
-      default:
-        return res.status(400).json({ message: 'Invalid role' });
-    }
-    
-    console.log(`Attempting to query ${tableName} table with username field: ${usernameField}`);
-    
-    // Query to check if user exists and password matches
-    const query = `SELECT * FROM ${tableName} WHERE ${usernameField} = ? AND password = ?`;
-    console.log('Executing query:', query);
-    
-    const [rows] = await pool.query(query, [username, password]);
-    
-    console.log(`Query result count: ${rows.length}`);
+    const { username, password } = req.body;
 
-    if (rows.length === 0) {
-      // Log failed login attempt
-      await pool.query(
-        `INSERT INTO user_logs (user_id, username, action, role) 
-         VALUES (0, ?, 'LOGIN_FAILED', ?)`,
-        [username, role]
-      );
-      
+    // Find user by username
+    const user = await User.findOne({ username });
+    if (!user) {
       return res.status(401).json({ message: 'Invalid username or password' });
     }
 
-    const user = rows[0];
-    console.log('Found user:', { ...user, password: '[REDACTED]' });
+    // Compare passwords
+    const isMatch = await user.comparePassword(password);
+    if (!isMatch) {
+      return res.status(401).json({ message: 'Invalid username or password' });
+    }
 
-    // Log successful login
-    await pool.query(
-      `INSERT INTO user_logs (user_id, username, action, role) 
-       VALUES (?, ?, 'LOGIN_SUCCESS', ?)`,
-      [user[idField], username, role]
-    );
-
-    // Map database fields to response fields
-    const userData = {
-      id: user[idField],
-      username: user[usernameField],
-      fname: user.fname,
-      lname: user.lname,
-      email: user.email,
-      contactnumber: role === 'admin' ? user.contact_n : user.contactnumber,
-      role: role
-    };
-
-    console.log('Login successful. Sending user data:', { ...userData, id: '[REDACTED]' });
-    
-    res.json({
-      message: 'Login successful',
-      user: userData
+    // Create login log entry
+    const loginLog = new LoginLog({
+      userId: user._id,
+      username: user.username,
+      role: user.role
     });
+    await loginLog.save();
 
+    // Return user data without password
+    const userData = user.toObject();
+    delete userData.password;
+    res.json(userData);
   } catch (error) {
-    console.error('Login error details:', {
-      error: error.message,
-      stack: error.stack,
-      sqlMessage: error.sqlMessage,
-      sqlState: error.sqlState
-    });
-    
-    res.status(500).json({ 
-      message: 'Internal server error',
-      error: error.message,
-      details: process.env.NODE_ENV === 'development' ? {
-        sqlMessage: error.sqlMessage,
-        sqlState: error.sqlState
-      } : undefined
-    });
+    res.status(500).json({ message: 'Server error' });
   }
 });
 
-// Add logout endpoint
-app.post('/logout', async (req, res) => {
-  const { userId, username, role } = req.body;
-
+// Password reset endpoint
+app.post('/api/auth/reset-password', async (req, res) => {
   try {
-    // Log the logout action
-    await pool.query(
-      `INSERT INTO user_logs (user_id, username, action, role) 
-       VALUES (?, ?, 'LOGOUT', ?)`,
-      [userId, username, role]
-    );
+    const { email, newPassword } = req.body;
 
-    res.json({ message: 'Logout successful' });
+    // Find user by email
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Update password
+    user.password = newPassword;
+    await user.save();
+
+    res.json({ message: 'Password reset successful' });
   } catch (error) {
-    console.error('Logout error:', error);
-    res.status(500).json({ message: 'Error logging out' });
+    console.error('Password reset error:', error);
+    res.status(500).json({ message: 'Server error' });
   }
 });
 
-// Add user creation endpoint
-app.post('/users', async (req, res) => {
-  const { fname, lname, email, user_name, password, contact_n, studentID, department, courses, status, role } = req.body;
-  
-  console.log('User creation attempt:', { fname, lname, email, user_name, role });
-
-  // Validate required fields
-  if (!fname || !lname || !user_name || !password || !role) {
-    return res.status(400).json({ message: 'Missing required fields' });
-  }
-
-  // Validate role
-  if (!['student', 'lecturer'].includes(role)) {
-    return res.status(400).json({ message: 'Invalid role. Must be either student or lecturer' });
-  }
-
+// Mock login log endpoint
+app.post('/api/logs/mock', async (req, res) => {
   try {
-    let tableName, idField;
-    let createTableQuery;
-    
-    // Set up table-specific configurations
-    if (role === 'lecturer') {
-      tableName = 'lecturer';
-      idField = 'id_lecturer';
-      createTableQuery = `
-        CREATE TABLE IF NOT EXISTS lecturer (
-          id_lecturer INT AUTO_INCREMENT PRIMARY KEY,
-          fname VARCHAR(45) NOT NULL,
-          lname VARCHAR(45) NOT NULL,
-          email VARCHAR(45),
-          username VARCHAR(45) NOT NULL UNIQUE,
-          password VARCHAR(45) NOT NULL,
-          contactnumber VARCHAR(45),
-          department VARCHAR(100),
-          courses TEXT,
-          status ENUM('active', 'on leave', 'inactive') DEFAULT 'active'
-        ) AUTO_INCREMENT = 1
-      `;
-    } else {
-      tableName = 'student';
-      idField = 'id_student';
-      createTableQuery = `
-        CREATE TABLE IF NOT EXISTS student (
-          id_student INT AUTO_INCREMENT PRIMARY KEY,
-          fname VARCHAR(45) NOT NULL,
-          lname VARCHAR(45) NOT NULL,
-          email VARCHAR(45),
-          username VARCHAR(45) NOT NULL UNIQUE,
-          password VARCHAR(45) NOT NULL,
-          contactnumber VARCHAR(45),
-          studentID VARCHAR(45)
-        ) AUTO_INCREMENT = 1
-      `;
-    }
+    const { userId, username, role } = req.body;
 
-    // Create table if it doesn't exist
-    await pool.query(createTableQuery);
-
-    // Always ensure the auto_increment is set to 1 if it's the student table
-    if (role === 'student') {
-      await pool.query(`ALTER TABLE student AUTO_INCREMENT = 1`);
-    }
-    
-    // Always ensure the auto_increment is set to 1 if it's the lecturer table
-    if (role === 'lecturer') {
-      await pool.query(`ALTER TABLE lecturer AUTO_INCREMENT = 1`);
-    }
-
-    // Check if username already exists
-    const [existingUsers] = await pool.query(
-      `SELECT username FROM ${tableName} WHERE username = ?`,
-      [user_name]
-    );
-
-    if (existingUsers.length > 0) {
-      return res.status(400).json({ message: 'Username already exists' });
-    }
-
-    // For lecturer role, we need to handle the courses array
-    let coursesJSON = null;
-    if (role === 'lecturer' && courses) {
-      coursesJSON = JSON.stringify(courses);
-    }
-
-    // Insert new user
-    let query, queryParams;
-    
-    if (role === 'lecturer') {
-      query = `INSERT INTO ${tableName} (fname, lname, email, username, password, contactnumber, department, courses, status)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`;
-      queryParams = [
-        fname, 
-        lname, 
-        email || null, 
-        user_name, 
-        password, 
-        contact_n || null, 
-        department || null, 
-        coursesJSON, 
-        status || 'active'
-      ];
-    } else {
-      query = `INSERT INTO ${tableName} (fname, lname, email, username, password, contactnumber, studentID)
-              VALUES (?, ?, ?, ?, ?, ?, ?)`;
-      queryParams = [
-        fname, 
-        lname, 
-        email || null, 
-        user_name, 
-        password, 
-        contact_n || null, 
-        studentID || null
-      ];
-    }
-
-    const [result] = await pool.query(query, queryParams);
-
-    // Log user creation
-    await pool.query(
-      `INSERT INTO user_logs (user_id, username, action, role) 
-       VALUES (?, ?, 'USER_CREATED', ?)`,
-      [result.insertId, user_name, role]
-    );
-
-    console.log('User created successfully:', { 
-      id: result.insertId, 
-      role,
-      ...(role === 'student' && { 
-        studentID: req.body.studentID || null,
-        message: 'Auto-increment should start from 1'
-      })
+    // Create mock login log entry
+    const loginLog = new LoginLog({
+      userId: new mongoose.Types.ObjectId(userId),
+      username,
+      role
     });
+    await loginLog.save();
 
-    // Prepare response based on role
-    let userData;
-    if (role === 'lecturer') {
-      userData = {
-        id: result.insertId,
-        fname,
-        lname,
-        email,
-        username: user_name,
-        contactnumber: contact_n,
-        department,
-        courses: courses || [],
-        status: status || 'active',
-        role
-      };
-    } else {
-      userData = {
-        id: result.insertId,
-        fname,
-        lname,
-        email,
-        username: user_name,
-        contactnumber: contact_n,
-        role,
-        ...(role === 'student' && { studentID: req.body.studentID || null })
-      };
-    }
-
-    res.status(201).json({
-      message: 'User created successfully',
-      user: userData
-    });
-
+    res.json({ success: true });
   } catch (error) {
-    console.error('User creation error:', error);
-    res.status(500).json({ 
-      message: 'Error creating user',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
+    console.error('Error creating mock login log:', error);
+    res.status(500).json({ message: 'Server error' });
   }
 });
 
-// Add devices endpoints
-app.post('/devices', async (req, res) => {
-  const { deviceId, deviceName, modelName, osName, osVersion, ownerId, status } = req.body;
-  
-  console.log('Device registration attempt:', { deviceId, deviceName, ownerId });
-
-  if (!deviceName || !ownerId) {
-    return res.status(400).json({ message: 'Device name and owner ID are required' });
-  }
-
+// Get all users
+app.get('/api/users', async (req, res) => {
   try {
-    // First check if the device with this ID already exists
-    const [existingDevices] = await pool.query(
-      `SELECT * FROM devices WHERE deviceId = ?`,
-      [deviceId]
-    );
-
-    if (existingDevices.length > 0) {
-      return res.status(400).json({ message: 'Device already registered' });
-    }
-    
-    // Insert the new device
-    const [result] = await pool.query(
-      `INSERT INTO devices (deviceId, deviceName, modelName, osName, osVersion, ownerId, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [deviceId, deviceName, modelName || 'Unknown', osName || 'Unknown', osVersion || 'Unknown', ownerId, status || 'active']
-    );
-
-    // Get owner name for response
-    let ownerName = 'Unknown';
-    try {
-      const [ownerRows] = await pool.query(
-        `SELECT fname, lname FROM admin WHERE idadmin = ? 
-         UNION 
-         SELECT fname, lname FROM lecturer WHERE id_lecturer = ? 
-         UNION 
-         SELECT fname, lname FROM student WHERE id_student = ?`,
-        [ownerId, ownerId, ownerId]
-      );
-      
-      if (ownerRows.length > 0) {
-        ownerName = `${ownerRows[0].fname} ${ownerRows[0].lname}`;
-      }
-    } catch (error) {
-      console.error('Error getting owner name:', error);
-    }
-
-    console.log('Device registered successfully:', { id: result.insertId });
-
-    res.status(201).json({
-      message: 'Device registered successfully',
-      device: {
-        id: result.insertId,
-        deviceId,
-        deviceName,
-        modelName: modelName || 'Unknown',
-        osName: osName || 'Unknown',
-        osVersion: osVersion || 'Unknown',
-        ownerId,
-        ownerName,
-        status: status || 'active',
-        registeredAt: new Date()
-      }
-    });
-
-  } catch (error) {
-    console.error('Device registration error:', error);
-    res.status(500).json({ 
-      message: 'Error registering device',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
-  }
-});
-
-// Get all devices
-app.get('/devices', async (req, res) => {
-  try {
-    // Get all devices with owner names joined
-    const [devices] = await pool.query(`
-      SELECT d.*, 
-        CONCAT(COALESCE(a.fname, ''), ' ', COALESCE(a.lname, '')) as ownerName 
-      FROM devices d
-      LEFT JOIN admin a ON d.ownerId = a.idadmin
-      UNION
-      SELECT d.*, 
-        CONCAT(COALESCE(l.fname, ''), ' ', COALESCE(l.lname, '')) as ownerName 
-      FROM devices d
-      LEFT JOIN lecturer l ON d.ownerId = l.id_lecturer
-      UNION
-      SELECT d.*, 
-        CONCAT(COALESCE(s.fname, ''), ' ', COALESCE(s.lname, '')) as ownerName 
-      FROM devices d
-      LEFT JOIN student s ON d.ownerId = s.id_student
-      ORDER BY id
-    `);
-
-    res.json(devices);
-  } catch (error) {
-    console.error('Error fetching devices:', error);
-    res.status(500).json({ 
-      message: 'Error fetching devices',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
-  }
-});
-
-// Update device status
-app.put('/devices/:id/status', async (req, res) => {
-  const { id } = req.params;
-  const { status } = req.body;
-  
-  if (!['active', 'inactive'].includes(status)) {
-    return res.status(400).json({ message: 'Invalid status. Must be active or inactive' });
-  }
-
-  try {
-    const [result] = await pool.query(
-      `UPDATE devices SET status = ? WHERE id = ?`,
-      [status, id]
-    );
-
-    if (result.affectedRows === 0) {
-      return res.status(404).json({ message: 'Device not found' });
-    }
-
-    res.json({ message: `Device ${status} successfully` });
-  } catch (error) {
-    console.error('Error updating device status:', error);
-    res.status(500).json({ message: 'Error updating device status' });
-  }
-});
-
-// Delete device
-app.delete('/devices/:id', async (req, res) => {
-  const { id } = req.params;
-
-  try {
-    const [result] = await pool.query(
-      `DELETE FROM devices WHERE id = ?`,
-      [id]
-    );
-
-    if (result.affectedRows === 0) {
-      return res.status(404).json({ message: 'Device not found' });
-    }
-
-    res.json({ message: 'Device deleted successfully' });
-  } catch (error) {
-    console.error('Error deleting device:', error);
-    res.status(500).json({ message: 'Error deleting device' });
-  }
-});
-
-// Get all users route
-app.get('/users', async (req, res) => {
-  try {
-    // Combine users from different tables
-    const [adminRows] = await pool.query(`
-      SELECT 
-        idadmin as id, 
-        fname, 
-        lname, 
-        email, 
-        username as user_name, 
-        contact_n, 
-        'admin' as role,
-        'active' as status
-      FROM admin
-    `);
-    
-    const [lecturerRows] = await pool.query(`
-      SELECT 
-        id_lecturer as id, 
-        fname, 
-        lname, 
-        email, 
-        username as user_name, 
-        contactnumber as contact_n, 
-        department,
-        courses,
-        status,
-        'lecturer' as role
-      FROM lecturer
-    `);
-    
-    // Process lecturer rows to parse courses from JSON
-    const processedLecturerRows = lecturerRows.map(lecturer => {
-      try {
-        if (lecturer.courses) {
-          lecturer.courses = JSON.parse(lecturer.courses);
-        } else {
-          lecturer.courses = [];
-        }
-      } catch (error) {
-        lecturer.courses = [];
-      }
-      return lecturer;
-    });
-    
-    const [studentRows] = await pool.query(`
-      SELECT 
-        id_student as id, 
-        fname, 
-        lname, 
-        email, 
-        username as user_name, 
-        contactnumber as contact_n, 
-        'student' as role,
-        'active' as status,
-        studentID
-      FROM student
-    `);
-    
-    const users = [...adminRows, ...processedLecturerRows, ...studentRows];
-    
+    const users = await User.find({}, '-password');
     res.json(users);
   } catch (error) {
-    console.error('Error fetching users:', error);
-    res.status(500).json({ message: 'Error fetching users' });
+    console.error('Get users error:', error);
+    res.status(500).json({ message: 'Internal server error' });
   }
 });
 
-// Delete user endpoint
-app.delete('/users/:id', async (req, res) => {
-  const { id } = req.params;
-  const { role } = req.query;
-
-  if (!role) {
-    return res.status(400).json({ message: 'Role is required' });
-  }
-
+// Get user by ID
+app.get('/api/users/:id', async (req, res) => {
   try {
-    let tableName, idField;
-    
-    // Set up table-specific configurations
-    if (role === 'lecturer') {
-      tableName = 'lecturer';
-      idField = 'id_lecturer';
-    } else if (role === 'student') {
-      tableName = 'student';
-      idField = 'id_student';
-    } else if (role === 'admin') {
-      tableName = 'admin';
-      idField = 'idadmin';
-    } else {
-      return res.status(400).json({ message: 'Invalid role' });
-    }
-
-    // Check if user exists
-    const [existingUsers] = await pool.query(
-      `SELECT * FROM ${tableName} WHERE ${idField} = ?`,
-      [id]
-    );
-
-    if (existingUsers.length === 0) {
+    const user = await User.findById(req.params.id);
+    if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    // Delete the user
-    const [result] = await pool.query(
-      `DELETE FROM ${tableName} WHERE ${idField} = ?`,
-      [id]
-    );
-
-    // Log user deletion
-    await pool.query(
-      `INSERT INTO user_logs (user_id, username, action, role) 
-       VALUES (?, ?, 'USER_DELETED', ?)`,
-      [id, existingUsers[0].username, role]
-    );
-
-    console.log(`${role} deleted successfully:`, { id });
-
-    res.json({
-      message: `${role} deleted successfully`
-    });
-
+    const userData = user.toObject();
+    delete userData.password;
+    res.json(userData);
   } catch (error) {
-    console.error(`Error deleting ${role}:`, error);
-    res.status(500).json({ 
-      message: `Error deleting ${role}`,
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
+    console.error('Get user error:', error);
+    res.status(500).json({ message: 'Internal server error' });
   }
 });
 
-// Add user update endpoint
-app.put('/users/:id', async (req, res) => {
-  const { id } = req.params;
-  const { fname, lname, email, user_name, password, contact_n, studentID, department, courses, status, role } = req.body;
-  
-  console.log(`Update ${role} attempt:`, { id, fname, lname, email, user_name });
-
-  // Validate required fields
-  if (!id || !role) {
-    return res.status(400).json({ message: 'ID and role are required' });
-  }
-
-  // Validate role
-  if (!['student', 'lecturer', 'admin'].includes(role)) {
-    return res.status(400).json({ message: 'Invalid role' });
-  }
-
+// Create new user
+app.post('/api/users', async (req, res) => {
   try {
-    let tableName, idField, contactField;
+    const { idNumber, firstName, lastName, email, username, password, role } = req.body;
+
+    // Validate required fields
+    if (!idNumber || !firstName || !lastName || !email || !username || !password || !role) {
+      return res.status(400).json({ message: 'All fields are required' });
+    }
+
+    // Check if username or email already exists
+    const existingUser = await User.findOne({
+      $or: [{ username }, { email }]
+    });
+
+    if (existingUser) {
+      return res.status(400).json({ 
+        message: existingUser.username === username ? 
+          'Username already exists' : 'Email already exists' 
+      });
+    }
+
+    // Create new user
+    const user = new User({
+      idNumber,
+      firstName,
+      lastName,
+      email,
+      username,
+      password,
+      role
+    });
+
+    await user.save();
+
+    // Return user data without password
+    const userData = user.toObject();
+    delete userData.password;
+    res.status(201).json(userData);
+  } catch (error) {
+    console.error('Create user error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// Update user
+app.put('/api/users/:id', async (req, res) => {
+  try {
+    const { idNumber, firstName, lastName, email, username, password, role } = req.body;
     
-    // Set up table-specific configurations
-    if (role === 'lecturer') {
-      tableName = 'lecturer';
-      idField = 'id_lecturer';
-      contactField = 'contactnumber';
-    } else if (role === 'student') {
-      tableName = 'student';
-      idField = 'id_student';
-      contactField = 'contactnumber';
-    } else {
-      tableName = 'admin';
-      idField = 'idadmin';
-      contactField = 'contact_n';
+    // Validate required fields
+    if (!idNumber || !firstName || !lastName || !email || !username || !role) {
+      return res.status(400).json({ message: 'All fields except password are required' });
     }
 
-    // Check if user exists
-    const [existingUsers] = await pool.query(
-      `SELECT * FROM ${tableName} WHERE ${idField} = ?`,
-      [id]
-    );
+    // Check if username or email already exists for other users
+    const existingUser = await User.findOne({
+      $and: [
+        { _id: { $ne: req.params.id } },
+        { $or: [{ username }, { email }] }
+      ]
+    });
 
-    if (existingUsers.length === 0) {
-      return res.status(404).json({ message: 'User not found' });
-    }
-
-    // Prepare update fields
-    let updateFields = [];
-    let updateValues = [];
-
-    if (fname) {
-      updateFields.push('fname = ?');
-      updateValues.push(fname);
-    }
-    
-    if (lname) {
-      updateFields.push('lname = ?');
-      updateValues.push(lname);
-    }
-    
-    if (email) {
-      updateFields.push('email = ?');
-      updateValues.push(email);
-    }
-    
-    if (user_name) {
-      // Check if username already exists for a different user
-      const [usernameCheck] = await pool.query(
-        `SELECT * FROM ${tableName} WHERE username = ? AND ${idField} != ?`,
-        [user_name, id]
-      );
-      
-      if (usernameCheck.length > 0) {
-        return res.status(400).json({ message: 'Username already exists' });
-      }
-      
-      updateFields.push('username = ?');
-      updateValues.push(user_name);
-    }
-    
-    if (password) {
-      updateFields.push('password = ?');
-      updateValues.push(password);
-    }
-    
-    if (contact_n) {
-      updateFields.push(`${contactField} = ?`);
-      updateValues.push(contact_n);
-    }
-    
-    // Add studentID field update for students
-    if (role === 'student' && studentID) {
-      updateFields.push('studentID = ?');
-      updateValues.push(studentID);
-    }
-    
-    // Add lecturer-specific fields
-    if (role === 'lecturer') {
-      if (department) {
-        updateFields.push('department = ?');
-        updateValues.push(department);
-      }
-      
-      if (courses) {
-        updateFields.push('courses = ?');
-        updateValues.push(JSON.stringify(courses));
-      }
-      
-      if (status) {
-        updateFields.push('status = ?');
-        updateValues.push(status);
-      }
-    }
-    
-    if (updateFields.length === 0) {
-      return res.status(400).json({ message: 'No fields to update' });
+    if (existingUser) {
+      return res.status(400).json({ 
+        message: existingUser.username === username ? 
+          'Username already exists' : 'Email already exists' 
+      });
     }
 
-    // Add the id to the values array
-    updateValues.push(id);
-
-    // Update the user
-    const [result] = await pool.query(
-      `UPDATE ${tableName} SET ${updateFields.join(', ')} WHERE ${idField} = ?`,
-      updateValues
-    );
-
-    // Log user update
-    await pool.query(
-      `INSERT INTO user_logs (user_id, username, action, role) 
-       VALUES (?, ?, 'USER_UPDATED', ?)`,
-      [id, existingUsers[0].username, role]
-    );
-
-    console.log(`${role} updated successfully:`, { id });
-
-    // Get the updated user data
-    const [updatedUser] = await pool.query(
-      `SELECT * FROM ${tableName} WHERE ${idField} = ?`,
-      [id]
-    );
-
-    // Process courses if it's a lecturer
-    let processedCourses = [];
-    if (role === 'lecturer' && updatedUser[0].courses) {
-      try {
-        processedCourses = JSON.parse(updatedUser[0].courses);
-      } catch (e) {
-        processedCourses = [];
-      }
-    }
-
-    const userData = {
-      id: updatedUser[0][idField],
-      fname: updatedUser[0].fname,
-      lname: updatedUser[0].lname,
-      email: updatedUser[0].email,
-      username: updatedUser[0].username,
-      contactnumber: role === 'admin' ? updatedUser[0].contact_n : updatedUser[0].contactnumber,
-      role: role,
-      ...(role === 'student' && { studentID: updatedUser[0].studentID }),
-      ...(role === 'lecturer' && { 
-        department: updatedUser[0].department,
-        courses: processedCourses,
-        status: updatedUser[0].status
-      })
+    // Prepare update data
+    const updateData = {
+      idNumber,
+      firstName,
+      lastName,
+      email,
+      username,
+      role
     };
 
-    res.json({
-      message: `${role} updated successfully`,
-      user: userData
-    });
+    // Only update password if provided
+    if (password) {
+      updateData.password = password;
+    }
 
-  } catch (error) {
-    console.error(`Error updating ${role}:`, error);
-    res.status(500).json({ 
-      message: `Error updating ${role}`,
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
-  }
-});
-
-// Classes API endpoints
-app.post('/classes', async (req, res) => {
-  const { classname, classcode, capacity } = req.body;
-  
-  console.log('Class creation attempt:', { classname, classcode, capacity });
-
-  // Validate required fields
-  if (!classname || !classcode) {
-    return res.status(400).json({ message: 'Class name and code are required' });
-  }
-
-  try {
-    // Create classes table if it doesn't exist
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS classes (
-        id_classes INT AUTO_INCREMENT PRIMARY KEY,
-        classname VARCHAR(45) NOT NULL,
-        classcode VARCHAR(45) NOT NULL,
-        capacity VARCHAR(45)
-      )
-    `);
-
-    // Insert the new class
-    const [result] = await pool.query(
-      `INSERT INTO classes (classname, classcode, capacity) VALUES (?, ?, ?)`,
-      [classname, classcode, capacity || '30']
+    const user = await User.findByIdAndUpdate(
+      req.params.id,
+      updateData,
+      { new: true, runValidators: true }
     );
 
-    console.log('Class created successfully:', { id: result.insertId });
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
 
-    res.status(201).json({
-      message: 'Class created successfully',
-      id: result.insertId,
-      classname,
-      classcode,
-      capacity: capacity || '30'
+    const userData = user.toObject();
+    delete userData.password;
+    res.json(userData);
+  } catch (error) {
+    console.error('Update user error:', error);
+    if (error.name === 'ValidationError') {
+      return res.status(400).json({ message: error.message });
+    }
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// Delete user
+app.delete('/api/users/:id', async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id);
+    
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Check if user is trying to delete themselves
+    if (user._id.toString() === req.user?._id?.toString()) {
+      return res.status(400).json({ message: 'Cannot delete your own account' });
+    }
+
+    await User.findByIdAndDelete(req.params.id);
+    res.json({ message: 'User deleted successfully' });
+  } catch (error) {
+    console.error('Delete user error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// Get login logs (admin only)
+app.get('/api/logs', async (req, res) => {
+  try {
+    const logs = await LoginLog.find()
+      .sort({ loginTime: -1 })
+      .populate('userId', 'firstName lastName email');
+    res.json(logs);
+  } catch (error) {
+    console.error('Error fetching login logs:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Send credentials email endpoint
+app.post('/api/auth/send-credentials', async (req, res) => {
+  try {
+    const { email, username, password, role, firstName } = req.body;
+
+    // Validate required fields
+    if (!email || !username || !password || !role || !firstName) {
+      console.error('Missing required fields for email:', { email, username, role, firstName });
+      return res.status(400).json({ message: 'Missing required fields' });
+    }
+
+    // Check if email credentials are configured
+    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASSWORD) {
+      console.error('Email credentials not configured');
+      return res.status(500).json({ message: 'Email service not configured' });
+    }
+
+    console.log('Attempting to send email to:', email);
+    console.log('Using email account:', process.env.EMAIL_USER);
+
+    // Create email transporter
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASSWORD,
+      },
     });
 
+    // Verify transporter configuration
+    try {
+      await transporter.verify();
+      console.log('Email transporter verified successfully');
+    } catch (verifyError) {
+      console.error('Email transporter verification failed:', verifyError);
+      return res.status(500).json({ message: 'Email service configuration error' });
+    }
+
+    // Email content
+    const mailOptions = {
+      from: process.env.EMAIL_USER,
+      to: email,
+      subject: 'Welcome to ProjectX - Your Account Credentials',
+      html: `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <style>
+            body {
+              font-family: Arial, sans-serif;
+              line-height: 1.6;
+              color: #333;
+              max-width: 600px;
+              margin: 0 auto;
+              padding: 20px;
+            }
+            .header {
+              background-color: #4CAF50;
+              color: white;
+              padding: 20px;
+              text-align: center;
+              border-radius: 5px 5px 0 0;
+            }
+            .content {
+              background-color: #f9f9f9;
+              padding: 20px;
+              border-radius: 0 0 5px 5px;
+            }
+            .credentials {
+              background-color: white;
+              padding: 15px;
+              border-radius: 5px;
+              margin: 20px 0;
+              box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            }
+            .credential-item {
+              margin: 10px 0;
+              padding: 10px;
+              background-color: #f5f5f5;
+              border-radius: 3px;
+            }
+            .footer {
+              text-align: center;
+              margin-top: 20px;
+              font-size: 12px;
+              color: #666;
+            }
+            .button {
+              display: inline-block;
+              padding: 10px 20px;
+              background-color: #4CAF50;
+              color: white;
+              text-decoration: none;
+              border-radius: 5px;
+              margin-top: 20px;
+            }
+            .logo {
+              max-width: 150px;
+              margin-bottom: 20px;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>Welcome to ProjectX!</h1>
+          </div>
+          <div class="content">
+            <p>Hello ${firstName},</p>
+            <p>Your account has been successfully created. Here are your login credentials:</p>
+            
+            <div class="credentials">
+              <div class="credential-item">
+                <strong>Role:</strong> ${role.charAt(0).toUpperCase() + role.slice(1)}
+              </div>
+              <div class="credential-item">
+                <strong>Username:</strong> ${username}
+              </div>
+              <div class="credential-item">
+                <strong>Password:</strong> ${password}
+              </div>
+            </div>
+
+            <p>For security reasons, please:</p>
+            <ul>
+              <li>Log in to your account immediately</li>
+              <li>Change your password after your first login</li>
+              <li>Keep your credentials secure and do not share them with anyone</li>
+            </ul>
+
+            <p>If you have any questions or need assistance, please contact the system administrator.</p>
+            
+            <div class="footer">
+              <p>This is an automated message, please do not reply to this email.</p>
+              <p>&copy; ${new Date().getFullYear()} ProjectX. All rights reserved.</p>
+            </div>
+          </div>
+        </body>
+        </html>
+      `,
+    };
+
+    // Send email
+    const info = await transporter.sendMail(mailOptions);
+    console.log('Email sent successfully:', info.response);
+    res.json({ message: 'Credentials email sent successfully' });
   } catch (error) {
-    console.error('Class creation error:', error);
+    console.error('Error sending credentials email:', error);
     res.status(500).json({ 
-      message: 'Error creating class',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      message: 'Failed to send credentials email',
+      error: error.message 
     });
   }
 });
 
-// Get all classes
-app.get('/classes', async (req, res) => {
+// Create new course
+app.post('/api/courses', async (req, res) => {
   try {
-    // Create table if not exists
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS classes (
-        id_classes INT AUTO_INCREMENT PRIMARY KEY,
-        classname VARCHAR(45) NOT NULL,
-        classcode VARCHAR(45) NOT NULL,
-        capacity VARCHAR(45)
-      )
-    `);
-    
-    const [classes] = await pool.query('SELECT * FROM classes');
-    res.json(classes);
+    const { courseCode, courseName, description, lecturerId, schedules } = req.body;
+
+    // Validate required fields
+    if (!courseCode || !courseName || !description || !lecturerId || !schedules || schedules.length === 0) {
+      return res.status(400).json({ message: 'All fields are required' });
+    }
+
+    // Check if course code already exists
+    const existingCourse = await Course.findOne({ courseCode });
+    if (existingCourse) {
+      return res.status(400).json({ message: 'Course code already exists' });
+    }
+
+    // Check if lecturer exists
+    const lecturer = await User.findById(lecturerId);
+    if (!lecturer || lecturer.role !== 'lecturer') {
+      return res.status(400).json({ message: 'Invalid lecturer' });
+    }
+
+    // Create new course
+    const course = new Course({
+      courseCode,
+      courseName,
+      description,
+      lecturerId,
+      schedules
+    });
+
+    await course.save();
+
+    // Populate lecturer details
+    await course.populate('lecturerId', 'firstName lastName');
+
+    res.status(201).json(course);
   } catch (error) {
-    console.error('Error fetching classes:', error);
-    res.status(500).json({ message: 'Error fetching classes' });
+    console.error('Create course error:', error);
+    res.status(500).json({ message: 'Internal server error' });
   }
 });
 
-// Get a specific class
-app.get('/classes/:id', async (req, res) => {
-  const { id } = req.params;
-  
+// Get all courses
+app.get('/api/courses', async (req, res) => {
   try {
-    const [classes] = await pool.query('SELECT * FROM classes WHERE id_classes = ?', [id]);
-    
-    if (classes.length === 0) {
-      return res.status(404).json({ message: 'Class not found' });
-    }
-    
-    res.json(classes[0]);
+    const courses = await Course.find().populate('lecturerId', 'firstName lastName');
+    res.json(courses);
   } catch (error) {
-    console.error('Error fetching class:', error);
-    res.status(500).json({ message: 'Error fetching class' });
+    console.error('Get courses error:', error);
+    res.status(500).json({ message: 'Internal server error' });
   }
 });
 
-// Update a class
-app.put('/classes/:id', async (req, res) => {
-  const { id } = req.params;
-  const { classname, classcode, capacity } = req.body;
-  
+// Update course
+app.put('/api/courses/:id', async (req, res) => {
   try {
-    const [result] = await pool.query(
-      'UPDATE classes SET classname = ?, classcode = ?, capacity = ? WHERE id_classes = ?',
-      [classname, classcode, capacity, id]
-    );
-    
-    if (result.affectedRows === 0) {
-      return res.status(404).json({ message: 'Class not found' });
+    const { id } = req.params;
+    const updateData = req.body;
+
+    // Validate required fields
+    if (!updateData.courseCode || !updateData.courseName || !updateData.description || !updateData.lecturerId) {
+      return res.status(400).json({ message: 'Missing required fields' });
     }
-    
-    res.json({ 
-      message: 'Class updated successfully',
+
+    // Check if the course exists
+    const existingCourse = await Course.findById(id);
+    if (!existingCourse) {
+      return res.status(404).json({ message: 'Course not found' });
+    }
+
+    // If students array is provided, validate that all student IDs exist
+    if (updateData.students && updateData.students.length > 0) {
+      const studentIds = updateData.students;
+      const validStudents = await User.find({
+        _id: { $in: studentIds },
+        role: 'student'
+      });
+
+      if (validStudents.length !== studentIds.length) {
+        return res.status(400).json({ message: 'One or more invalid student IDs provided' });
+      }
+    }
+
+    // Update the course with the new data
+    const updatedCourse = await Course.findByIdAndUpdate(
       id,
-      classname,
-      classcode,
-      capacity
+      { 
+        $set: {
+          courseCode: updateData.courseCode,
+          courseName: updateData.courseName,
+          description: updateData.description,
+          lecturerId: updateData.lecturerId,
+          schedules: updateData.schedules || [],
+          students: updateData.students || [],
+          updatedAt: new Date()
+        }
+      },
+      { new: true, runValidators: true }
+    );
+
+    res.json(updatedCourse);
+  } catch (error) {
+    console.error('Error updating course:', error);
+    res.status(500).json({ message: 'Failed to update course', error: error.message });
+  }
+});
+
+// Delete course
+app.delete('/api/courses/:id', async (req, res) => {
+  try {
+    const course = await Course.findById(req.params.id);
+    if (!course) {
+      return res.status(404).json({ message: 'Course not found' });
+    }
+
+    await Course.findByIdAndDelete(req.params.id);
+    res.json({ message: 'Course deleted successfully' });
+  } catch (error) {
+    console.error('Delete course error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// Generate QR code for attendance
+app.post('/api/attendance/generate-qr', async (req, res) => {
+  try {
+    const { courseId, lecturerId } = req.body;
+
+    // Validate course and lecturer
+    const course = await Course.findById(courseId);
+    if (!course) {
+      return res.status(404).json({ message: 'Course not found' });
+    }
+
+    if (course.lecturerId.toString() !== lecturerId) {
+      return res.status(403).json({ message: 'Unauthorized to generate QR for this course' });
+    }
+
+    const now = new Date();
+    const phTime = new Date(now.getTime() + (8 * 60 * 60 * 1000)); // Convert to PH time (UTC+8)
+    const expiryTime = new Date(phTime.getTime() + (60 * 60 * 1000)); // 1 hour from now
+
+    const qrData = JSON.stringify({
+      courseId: course._id,
+      courseCode: course.courseCode,
+      courseName: course.courseName,
+      generatedAt: phTime.toISOString(),
+      expiresAt: expiryTime.toISOString()
+    });
+
+    // Create attendance record
+    const attendance = new Attendance({
+      courseId: course._id,
+      lecturerId: lecturerId,
+      qrCodeData: qrData,
+      generatedAt: phTime,
+      expiresAt: expiryTime
+    });
+
+    await attendance.save();
+
+    res.json({
+      qrData,
+      generatedAt: phTime,
+      expiresAt: expiryTime
     });
   } catch (error) {
-    console.error('Error updating class:', error);
-    res.status(500).json({ message: 'Error updating class' });
+    console.error('Generate QR error:', error);
+    res.status(500).json({ message: 'Server error' });
   }
 });
 
-// Delete a class
-app.delete('/classes/:id', async (req, res) => {
-  const { id } = req.params;
-  
+// Record attendance from QR scan
+app.post('/api/attendance/scan', async (req, res) => {
   try {
-    const [result] = await pool.query('DELETE FROM classes WHERE id_classes = ?', [id]);
-    
-    if (result.affectedRows === 0) {
-      return res.status(404).json({ message: 'Class not found' });
+    const { qrData, studentId } = req.body;
+    const qrInfo = JSON.parse(qrData);
+
+    // Validate QR code expiration
+    const now = new Date();
+    const phTime = new Date(now.getTime() + (8 * 60 * 60 * 1000)); // Current PH time
+    if (new Date(qrInfo.expiresAt) <= phTime) {
+      return res.status(400).json({ message: 'QR code has expired' });
     }
-    
-    res.json({ message: 'Class deleted successfully' });
+
+    // Find the attendance record
+    const attendance = await Attendance.findOne({
+      courseId: qrInfo.courseId,
+      generatedAt: new Date(qrInfo.generatedAt)
+    });
+
+    if (!attendance) {
+      return res.status(404).json({ message: 'Attendance record not found' });
+    }
+
+    // Check if student has already scanned
+    const hasScanned = attendance.scannedBy.some(
+      scan => scan.studentId.toString() === studentId
+    );
+
+    if (hasScanned) {
+      return res.status(400).json({ message: 'You have already scanned this QR code' });
+    }
+
+    // Add student to scannedBy array
+    attendance.scannedBy.push({
+      studentId: studentId,
+      scannedAt: phTime
+    });
+
+    await attendance.save();
+
+    res.json({ message: 'Attendance recorded successfully' });
   } catch (error) {
-    console.error('Error deleting class:', error);
-    res.status(500).json({ message: 'Error deleting class' });
+    console.error('Scan QR error:', error);
+    res.status(500).json({ message: 'Server error' });
   }
 });
 
-function startServer() {
-  // Listen on all network interfaces (0.0.0.0) instead of just localhost
-  app.listen(port, '0.0.0.0', () => {
-    console.log(`Server running on http://0.0.0.0:${port}`);
-    console.log(`For local access use: http://localhost:${port}`);
-    console.log(`Server is ready to accept connections from React Native`);
-  });
-}
+// Get attendance records for a course
+app.get('/api/attendance/course/:courseId', async (req, res) => {
+  try {
+    const { courseId } = req.params;
+    const attendanceRecords = await Attendance.find({ courseId })
+      .populate('scannedBy.studentId', 'firstName lastName idNumber')
+      .sort({ generatedAt: -1 });
 
-initialize();
+    res.json(attendanceRecords);
+  } catch (error) {
+    console.error('Get attendance records error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
 
-// Export the pool to be used in other files (if needed, though API is preferred)
-module.exports = {
-  getPool: () => pool,
-  // testConnection // Not typically exported
-};
+// Error handling middleware
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(500).json({ message: 'Something went wrong!' });
+});
+
+// Start server
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+}); 
