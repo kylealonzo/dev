@@ -1,0 +1,13 @@
+[core]
+	repositoryformatversion = 0
+	filemode = false
+	bare = false
+	logallrefupdates = true
+	symlinks = false
+	ignorecase = true
+[remote "Cheqr"]
+	url = https://github.com/Jellyjollie/ProjectX.git
+	fetch = +refs/heads/*:refs/remotes/Cheqr/*
+[branch "master"]
+	remote = Cheqr
+	merge = refs/heads/master
